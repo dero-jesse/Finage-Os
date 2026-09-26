@@ -1,0 +1,306 @@
+/* Finage OS v3 - Institutional Specialized View Layouts (Zero Icons Precision) */
+
+/* ==========================================================================
+   1. Branch Operations & Teller Counter Terminal
+   ========================================================================== */
+.denomination-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 1.25rem;
+}
+
+.denom-box {
+  background: #ffffff;
+  border: 1px solid var(--border-medium);
+  border-top: 2px solid var(--accent-green);
+  border-radius: var(--radius-xs);
+  padding: 0.75rem 0.85rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  transition: var(--trans-fast);
+  box-shadow: var(--shadow-xs);
+}
+
+.denom-box:focus-within {
+  border-color: var(--accent-green);
+  box-shadow: var(--shadow-sm);
+}
+
+.denom-val {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  color: var(--accent-green-dark);
+  letter-spacing: 0.04em;
+}
+
+.denom-box input {
+  background: #fafcfa;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-xs);
+  padding: 0.4rem 0.55rem;
+  color: var(--text-main);
+  font-family: var(--font-mono);
+  font-size: 0.9rem;
+  font-weight: 700;
+  width: 100%;
+  text-align: right;
+  transition: var(--trans-fast);
+}
+
+.denom-box input:focus {
+  outline: none;
+  background: #ffffff;
+  border-color: var(--accent-green);
+  box-shadow: 0 0 0 1px var(--accent-green);
+}
+
+.vault-reconcile-card {
+  background: #ffffff;
+  border: 1px solid var(--border-medium);
+  border-left: 4px solid var(--accent-green-dark);
+  border-radius: var(--radius-sm);
+  padding: 1.25rem 1.4rem;
+  box-shadow: var(--shadow-xs);
+}
+
+/* ==========================================================================
+   2. Treasury & Liquidity Management
+   ========================================================================== */
+.maturity-bucket-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  margin-top: 1rem;
+}
+
+.maturity-bucket-item {
+  background: #ffffff;
+  border: 1px solid var(--border-medium);
+  border-left: 3px solid var(--accent-green);
+  border-radius: var(--radius-xs);
+  padding: 0.75rem 1.1rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.25rem;
+  transition: var(--trans-fast);
+  box-shadow: var(--shadow-xs);
+}
+
+.maturity-bucket-item:hover {
+  background: #f0fdf4;
+  border-color: var(--accent-green);
+  transform: translateX(2px);
+}
+
+.bucket-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 130px;
+}
+
+.bucket-label {
+  font-weight: 800;
+  font-size: 0.8rem;
+  color: var(--text-main);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.bucket-sub {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--text-dim);
+}
+
+.bucket-stats {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  flex: 1;
+  justify-content: flex-end;
+}
+
+.gap-indicator {
+  padding: 0.25rem 0.65rem;
+  border-radius: var(--radius-xs);
+  font-family: var(--font-mono);
+  font-weight: 800;
+  font-size: 0.785rem;
+  min-width: 100px;
+  text-align: right;
+  border: 1px solid transparent;
+  font-variant-numeric: tabular-nums;
+}
+
+.gap-positive {
+  background: var(--accent-green-light);
+  color: var(--accent-green-dark);
+  border-color: rgba(4, 120, 87, 0.3);
+}
+
+.gap-negative {
+  background: var(--accent-rose-light);
+  color: var(--accent-rose);
+  border-color: rgba(185, 28, 28, 0.3);
+}
+
+/* Institutional Bank Cards Grid */
+.bank-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0.85rem;
+}
+
+.bank-card {
+  background: #ffffff;
+  border: 1px solid var(--border-medium);
+  border-top: 3px solid var(--accent-green);
+  border-radius: var(--radius-xs);
+  padding: 1rem 1.15rem;
+  transition: var(--trans-fast);
+  box-shadow: var(--shadow-xs);
+  position: relative;
+}
+
+.bank-card:hover {
+  border-color: var(--accent-green);
+  box-shadow: var(--shadow-sm);
+}
+
+.bank-card-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 0.65rem;
+}
+
+.bank-name {
+  font-weight: 800;
+  font-size: 0.85rem;
+  color: var(--accent-green-darkest);
+}
+
+.bank-acc-num {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--text-dim);
+  margin-top: 0.15rem;
+}
+
+.bank-bal {
+  font-family: var(--font-mono);
+  font-size: 1.25rem;
+  font-weight: 800;
+  color: var(--text-main);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ==========================================================================
+   3. Credit Pipeline & NPA Risk Matrix
+   ========================================================================== */
+.npa-summary-banner {
+  background: #ffffff;
+  border: 1px solid var(--border-medium);
+  border-left: 4px solid var(--accent-green-dark);
+  border-radius: var(--radius-sm);
+  padding: 1.15rem 1.35rem;
+  margin-bottom: 1.35rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 1rem;
+  box-shadow: var(--shadow-xs);
+}
+
+.pacing-meter-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-top: 0.5rem;
+}
+
+.pacing-bar-bg {
+  width: 100%;
+  height: 8px;
+  background: #e2ede2;
+  border-radius: var(--radius-pill);
+  overflow: hidden;
+}
+
+.pacing-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent-green), var(--accent-green-bright));
+  border-radius: var(--radius-pill);
+  transition: width 0.3s ease;
+}
+
+/* ==========================================================================
+   4. Board Governance & Audit Controls
+   ========================================================================== */
+.governance-metric-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1.35rem;
+}
+
+.gov-card {
+  background: #ffffff;
+  border: 1px solid var(--border-medium);
+  border-top: 2px solid var(--accent-green);
+  border-radius: var(--radius-xs);
+  padding: 1.1rem 1.2rem;
+  box-shadow: var(--shadow-xs);
+}
+
+.gov-card-title {
+  font-size: 0.725rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  letter-spacing: 0.05em;
+}
+
+.gov-card-val {
+  font-family: var(--font-mono);
+  font-size: 1.45rem;
+  font-weight: 800;
+  color: var(--accent-green-darkest);
+  margin-top: 0.35rem;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ==========================================================================
+   5. Member Self-Service Accounts
+   ========================================================================== */
+.member-search-box {
+  background: #ffffff;
+  border: 1px solid var(--border-medium);
+  border-radius: var(--radius-xs);
+  padding: 0.5rem 0.85rem;
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.account-type-card {
+  background: #ffffff;
+  border: 1px solid var(--border-medium);
+  border-left: 4px solid var(--accent-green);
+  border-radius: var(--radius-xs);
+  padding: 1.15rem 1.25rem;
+  transition: var(--trans-fast);
+  box-shadow: var(--shadow-xs);
+}
+
+.account-type-card:hover {
+  background: #f0fdf4;
+  border-color: var(--accent-green);
+  transform: translateY(-1px);
+}

@@ -1,0 +1,470 @@
+/* Finage OS v3 - Institutional Precision Banking Design System (Green & White Architecture) */
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap');
+
+:root {
+  /* Primary Institutional Palette: Deep Forest Green & Crisp White */
+  --bg-app: #f2f5f3;
+  --bg-surface: #ffffff;
+  --bg-surface-glass: rgba(255, 255, 255, 0.96);
+  --bg-surface-elevated: #ffffff;
+  --bg-surface-hover: #f0fdf4;
+  --bg-surface-subtle: #f8faf8;
+  --bg-surface-tinted: #ecfdf5;
+
+  /* Architectural Hairline Borders */
+  --border-subtle: #dbe4db;
+  --border-medium: #b9ccb9;
+  --border-strong: #047857;
+  --border-focus: #064e3b;
+  --border-active: #047857;
+
+  /* Typography Colors */
+  --text-main: #091e13;
+  --text-muted: #274032;
+  --text-dim: #4d6657;
+  --text-inverse: #ffffff;
+
+  /* Institutional Banking Greens */
+  --accent-green-darkest: #022c22;
+  --accent-green-dark: #064e3b;
+  --accent-green: #047857;
+  --accent-green-hover: #065f46;
+  --accent-green-bright: #10b981;
+  --accent-green-light: #ecfdf5;
+  --accent-green-subtle: #f0fdf4;
+
+  /* Semantic Financial Ledger Accent Colors */
+  --accent-emerald: #047857;
+  --accent-emerald-light: #ecfdf5;
+  --accent-amber: #b45309;
+  --accent-amber-light: #fffbeb;
+  --accent-rose: #b91c1c;
+  --accent-rose-light: #fef2f2;
+  --accent-cyan: #0f766e;
+  --accent-cyan-light: #f0fdfa;
+  --accent-purple: #581c87;
+  --accent-purple-light: #faf5ff;
+
+  /* Backward Compatibility Aliases */
+  --accent-primary: #047857;
+  --accent-primary-hover: #065f46;
+  --accent-primary-light: #ecfdf5;
+  --accent-aqua: #0f766e;
+  --accent-aqua-light: #f0fdfa;
+  --accent-aqua-subtle: #f0fdfa;
+  --accent-orange: #b45309;
+  --accent-orange-light: #fffbeb;
+  --accent-orange-subtle: #fffbeb;
+
+  /* Engineered Elevation & Shadows */
+  --shadow-xs: 0 1px 2px rgba(6, 78, 59, 0.04);
+  --shadow-sm: 0 2px 4px rgba(6, 78, 59, 0.06), 0 1px 2px rgba(6, 78, 59, 0.04);
+  --shadow-md: 0 6px 16px -2px rgba(6, 78, 59, 0.08), 0 2px 6px -1px rgba(6, 78, 59, 0.04);
+  --shadow-lg: 0 16px 32px -4px rgba(6, 78, 59, 0.12), 0 4px 12px -2px rgba(6, 78, 59, 0.05);
+
+  /* Modern Refined Corner Geometry (4px - 6px Precision) */
+  --radius-xs: 2px;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-pill: 9999px;
+
+  /* Typography */
+  --font-sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+
+  /* Transitions */
+  --trans-fast: 0.12s cubic-bezier(0.4, 0, 0.2, 1);
+  --trans-normal: 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  --trans-smooth: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Base Reset */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+/* CRITICAL: Strict No-Icons Enforcement (No SVG, No Icon Elements) */
+svg,
+.stat-icon-wrap,
+.stat-icon-wrap svg,
+.btn svg,
+.role-btn svg,
+.header-btn svg,
+.modal-title svg,
+.panel-title-wrap svg {
+  display: none !important;
+}
+
+html, body {
+  width: 100%;
+  min-height: 100vh;
+  background-color: var(--bg-app);
+  /* Creative Financial Micro-Dot Terminal Grid Texture */
+  background-image: 
+    radial-gradient(rgba(4, 120, 87, 0.09) 1px, transparent 1px),
+    linear-gradient(to right, rgba(4, 120, 87, 0.02) 1px, transparent 1px);
+  background-size: 24px 24px, 120px 120px;
+  color: var(--text-main);
+  font-family: var(--font-sans);
+  font-size: 13.5px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow-x: hidden;
+}
+
+/* Precision Scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #f0fdf4;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-medium);
+  border-radius: var(--radius-sm);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--accent-green);
+}
+
+/* Layout */
+#app {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  position: relative;
+}
+
+/* Top Navigation Bar */
+.top-header {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.65rem 2rem;
+  background: rgba(255, 255, 255, 0.97);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border-top: 3px solid var(--accent-green-dark);
+  border-bottom: 1px solid var(--border-medium);
+  box-shadow: var(--shadow-sm);
+}
+
+.brand-section {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+}
+
+.brand-title {
+  font-family: var(--font-sans);
+  font-weight: 800;
+  font-size: 1.05rem;
+  letter-spacing: 0.06em;
+  color: var(--accent-green-darkest);
+  text-transform: uppercase;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.brand-tag {
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  font-weight: 700;
+  padding: 0.15rem 0.5rem;
+  background: var(--accent-green-light);
+  color: var(--accent-green-dark);
+  border: 1px solid var(--accent-green);
+  border-radius: var(--radius-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/* Role Selector Segmented Controller */
+.role-nav {
+  display: flex;
+  align-items: center;
+  background: #f4f7f4;
+  padding: 3px;
+  border: 1px solid var(--border-medium);
+  border-radius: var(--radius-sm);
+  gap: 2px;
+}
+
+.role-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.45rem 1rem;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-xs);
+  color: var(--text-dim);
+  font-family: var(--font-sans);
+  font-size: 0.775rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  transition: var(--trans-fast);
+  position: relative;
+}
+
+.role-btn:hover {
+  color: var(--accent-green-dark);
+  background: rgba(255, 255, 255, 0.7);
+}
+
+.role-btn.active {
+  background: #ffffff;
+  color: var(--accent-green-dark);
+  border-color: var(--border-medium);
+  box-shadow: 0 1px 3px rgba(6, 78, 59, 0.08);
+}
+
+.role-btn.active::after {
+  content: '';
+  position: absolute;
+  bottom: -3px;
+  left: 20%;
+  right: 20%;
+  height: 2px;
+  background: var(--accent-green);
+  border-radius: 1px;
+}
+
+/* Header Utilities */
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.header-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.4rem 0.85rem;
+  height: 32px;
+  background: #ffffff;
+  border: 1px solid var(--border-medium);
+  border-radius: var(--radius-xs);
+  color: var(--text-muted);
+  font-family: var(--font-sans);
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  cursor: pointer;
+  transition: var(--trans-fast);
+}
+
+.header-btn:hover {
+  color: var(--accent-green-dark);
+  border-color: var(--accent-green);
+  background: var(--accent-green-light);
+}
+
+/* Active User Context Badge */
+.active-user-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0.85rem;
+  background: #ffffff;
+  border: 1px solid var(--border-medium);
+  border-left: 3px solid var(--accent-green);
+  border-radius: var(--radius-xs);
+  font-size: 0.775rem;
+  font-weight: 600;
+  color: var(--text-main);
+  box-shadow: var(--shadow-xs);
+}
+
+/* Institutional Live Financial Ticker Tape */
+.liquidity-ticker-bar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  padding: 0.4rem 2rem;
+  background: #ffffff;
+  border-bottom: 1px solid var(--border-subtle);
+  font-size: 0.75rem;
+  overflow-x: auto;
+  gap: 1.75rem;
+  box-shadow: 0 1px 2px rgba(6, 78, 59, 0.02);
+}
+
+.ticker-group {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+}
+
+.ticker-divider {
+  width: 1px;
+  height: 18px;
+  background: var(--border-medium);
+}
+
+.ticker-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  white-space: nowrap;
+}
+
+.ticker-label {
+  color: var(--text-dim);
+  font-weight: 700;
+  text-transform: uppercase;
+  font-size: 0.68rem;
+  letter-spacing: 0.06em;
+}
+
+.ticker-value {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 0.825rem;
+  color: var(--text-main);
+  font-variant-numeric: tabular-nums;
+}
+
+.ticker-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.12rem 0.45rem;
+  font-size: 0.68rem;
+  font-weight: 800;
+  font-family: var(--font-mono);
+  border-radius: var(--radius-xs);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.ticker-badge.safe {
+  background: var(--accent-green-light);
+  color: var(--accent-green-dark);
+  border: 1px solid var(--accent-green);
+}
+
+.ticker-badge.warning {
+  background: var(--accent-amber-light);
+  color: var(--accent-amber);
+  border: 1px solid var(--accent-amber);
+}
+
+.ticker-badge.danger {
+  background: var(--accent-rose-light);
+  color: var(--accent-rose);
+  border: 1px solid var(--accent-rose);
+}
+
+/* Pulsing Institutional Live Status Dot (Pure CSS) */
+.live-status-dot {
+  width: 7px;
+  height: 7px;
+  background: var(--accent-green);
+  border-radius: 50%;
+  position: relative;
+  display: inline-block;
+  margin-right: 0.35rem;
+}
+
+.live-status-dot::after {
+  content: '';
+  position: absolute;
+  top: -2px;
+  left: -2px;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  border: 1px solid var(--accent-green);
+  opacity: 0.8;
+  animation: pulse-ring 2s infinite ease-out;
+}
+
+@keyframes pulse-ring {
+  0% { transform: scale(0.8); opacity: 1; }
+  100% { transform: scale(2.2); opacity: 0; }
+}
+
+/* Main Viewport Container */
+.main-viewport {
+  flex: 1;
+  padding: 1.5rem 2rem 3.5rem 2rem;
+  max-width: 1720px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+/* View Header & Meta Breadcrumbs */
+.view-header-row {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  margin-bottom: 1.25rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--border-medium);
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.view-heading-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.view-meta-tag {
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: var(--accent-green);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.view-heading-group h1 {
+  font-size: 1.5rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--accent-green-darkest);
+}
+
+.view-heading-group p {
+  color: var(--text-dim);
+  font-size: 0.825rem;
+}
+
+.view-actions-group {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+/* Responsive Grid Breakpoints */
+@media (max-width: 1100px) {
+  .top-header {
+    padding: 0.65rem 1.25rem;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+  }
+  .role-nav {
+    order: 3;
+    width: 100%;
+    overflow-x: auto;
+  }
+  .main-viewport {
+    padding: 1rem 1.25rem 2.5rem 1.25rem;
+  }
+}

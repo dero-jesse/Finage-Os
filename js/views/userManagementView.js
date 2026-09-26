@@ -1,0 +1,469 @@
+/**
+ * Finage OS v3 - Institutional User Management & Role-Based Task Separation (RBAC)
+ * Enforces Segregation of Duties (SoD), transaction limits, and user administration
+ */
+
+const UserManagementView = {
+  activeTab: 'directory', // 'directory' | 'matrix' | 'adduser'
+
+  renderModal(container, state) {
+    const currentUser = store.getCurrentUser();
+
+    container.innerHTML = `
+      <div class="modal-backdrop" id="user-mgmt-modal">
+        <div class="modal-container" style="max-width: 860px;">
+          <!-- Modal Header -->
+          <div class="modal-header">
+            <div>
+              <div class="modal-title">
+                User Administration &amp; Task Separation (RBAC)
+              </div>
+              <span style="font-size: 0.75rem; color: var(--text-dim);">
+                Active Operator: <strong>${currentUser.name}</strong> (${currentUser.role} • Limit: ${currentUser.singleApprovalLimit > 0 ? Formatter.money(currentUser.singleApprovalLimit) : 'No Approval Cap'})
+              </span>
+            </div>
+            <button class="modal-close" id="btn-close-user-modal" title="Close modal" style="font-family: var(--font-mono); font-size: 0.85rem; font-weight: 700; padding: 0.3rem 0.6rem; border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); background: var(--bg-surface); color: var(--text-muted); cursor: pointer;">
+              ✕ Close
+            </button>
+          </div>
+
+          <!-- Navigation Tabs -->
+          <div style="display: flex; align-items: center; border-bottom: 1px solid var(--border-subtle); padding: 0 1.5rem; background: #f8fafc; overflow-x: auto; gap: 0.5rem;">
+            <button class="input-tab-btn ${this.activeTab === 'directory' ? 'active' : ''}" data-tab="directory">
+              1. System Operator Directory (${state.users.length})
+            </button>
+            <button class="input-tab-btn ${this.activeTab === 'matrix' ? 'active' : ''}" data-tab="matrix">
+              2. Task & Permissions Matrix (SoD)
+            </button>
+            <button class="input-tab-btn ${this.activeTab === 'adduser' ? 'active' : ''}" data-tab="adduser">
+              3. + Add New Operator
+            </button>
+            <button class="input-tab-btn ${this.activeTab === 'danger' ? 'active' : ''}" data-tab="danger" style="color: var(--accent-rose);">
+              4. Danger Zone
+            </button>
+          </div>
+
+          <!-- Tab Content Body -->
+          <div class="modal-body" id="user-mgmt-tab-body">
+            ${this.renderActiveTab(state)}
+          </div>
+        </div>
+      </div>
+    `;
+
+    this.bindEvents(container, state);
+  },
+
+  renderActiveTab(state) {
+    if (this.activeTab === 'users') return this.renderDirectoryTab(state);
+    if (this.activeTab === 'matrix') return this.renderMatrixTab(state);
+    if (this.activeTab === 'add') return this.renderAddUserTab(state);
+    if (this.activeTab === 'edit') return this.renderEditRolesTab(state);
+    
+    switch (this.activeTab) {
+      case 'matrix':
+        return this.renderMatrixTab(state);
+      case 'adduser':
+        return this.renderAddUserTab(state);
+      case 'danger':
+        return this.renderDangerTab(state);
+      case 'directory':
+      default:
+        return this.renderDirectoryTab(state);
+    }
+  },
+
+  // --- TAB 4: Edit User Roles ---
+  renderEditRolesTab(state) {
+    if (!this.editingUserId) return `<p>No operator selected for editing.</p>`;
+    const user = state.users.find(u => u.id === this.editingUserId);
+    if (!user) return `<p>Operator not found.</p>`;
+    
+    return `
+      <form id="form-edit-roles" style="display: flex; flex-direction: column; gap: 1rem;">
+        <h4>Edit Roles for ${user.name} (${user.id})</h4>
+        <div class="form-group" style="margin: 0;">
+          <label class="form-label">Assigned Institutional Roles (Multi-select)</label>
+          <select id="inp-edit-role" class="form-control" multiple size="8">
+            ${state.roles.map(r => `
+              <option value="${r.id}" ${(user.roles || []).includes(r.id) ? 'selected' : ''}>
+                ${r.name}
+              </option>
+            `).join('')}
+          </select>
+          <small style="color: var(--text-dim); display: block; margin-top: 4px;">Hold Ctrl/Cmd to select multiple roles.</small>
+        </div>
+        
+        <div style="display: flex; justify-content: flex-end; gap: 0.75rem; margin-top: 0.5rem;">
+          <button type="button" class="btn btn-secondary btn-cancel-edit">Cancel</button>
+          <button type="submit" class="btn btn-primary">
+            Update Roles
+          </button>
+        </div>
+      </form>
+    `;
+  },
+
+  // --- TAB 5: Danger Zone ---
+  renderDangerTab(state) {
+    return `
+      <div style="display: flex; flex-direction: column; gap: 1rem; padding: 1rem; border: 1px solid var(--accent-rose); border-radius: var(--radius-md); background: rgba(225, 29, 72, 0.05);">
+        <h4 style="color: var(--accent-rose); margin: 0; display: flex; align-items: center; gap: 0.5rem;">
+          <span class="badge badge-rose" style="font-size: 0.7rem; font-weight: 800;">CRITICAL</span>
+          System Purge &amp; Factory Reset
+        </h4>
+        <p style="font-size: 0.85rem; color: var(--text-dim); margin: 0;">
+          This action will permanently delete all database records (Transactions, Members, Users, Branches, Roles, etc.) from the live Supabase instance and reset the local state. 
+          Upon the next reload, the system will re-seed itself completely from scratch with ZERO balances (a true factory reset).
+        </p>
+        
+        <div style="display: flex; flex-direction: column; gap: 0.5rem; margin-top: 1rem; max-width: 300px;">
+          <label class="form-label">Admin Authorization Password</label>
+          <input type="password" id="inp-purge-password" class="form-control" placeholder="Enter purge password">
+          <button type="button" id="btn-execute-purge" class="btn btn-primary" style="background: var(--accent-rose); border-color: var(--accent-rose); margin-top: 0.5rem;">
+            Authenticate & Purge System
+          </button>
+        </div>
+      </div>
+    `;
+  },
+
+  // --- TAB 1: User Directory ---
+  renderDirectoryTab(state) {
+    return `
+      <div style="display: flex; flex-direction: column; gap: 1rem;">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <span style="font-size: 0.825rem; font-weight: 700; color: var(--text-main);">
+            Authorized System Users & Institutional Approval Ceilings
+          </span>
+          <span class="badge badge-aqua">MFA Enforced</span>
+        </div>
+
+        <div class="table-responsive" style="max-height: 420px;">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Operator</th>
+                <th>Designation / Role</th>
+                <th>Branch Assignment</th>
+                <th>Single Approval Limit</th>
+                <th>Status</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${state.users.map(u => `
+                <tr style="${u.id === state.currentUserId ? 'background: #f0fdfa;' : ''}">
+                  <td>
+                    <div class="cell-bold">${u.name}</div>
+                    <div style="font-size: 0.7rem; color: var(--text-dim);">${u.email} • ${u.id}</div>
+                  </td>
+                  <td>
+                    <div style="display: flex; flex-direction: column; gap: 4px;">
+                      ${(u.roles || []).map(rId => {
+                        const r = state.roles.find(rl => rl.id === rId);
+                        if (!r) return '';
+                        return `<span class="badge ${r.category === 'treasury' ? 'badge-cyan' : (r.category === 'credit' ? 'badge-purple' : (r.category === 'teller' ? 'badge-emerald' : 'badge-orange'))}" style="align-self: flex-start;">
+                          ${r.name}
+                        </span>`;
+                      }).join('')}
+                    </div>
+                  </td>
+                  <td style="font-size: 0.775rem;">${u.branchName}</td>
+                  <td class="cell-mono" style="color: ${u.singleApprovalLimit > 0 ? 'var(--accent-aqua)' : 'var(--text-dim)'};">
+                    ${u.singleApprovalLimit > 0 ? Formatter.money(u.singleApprovalLimit) : 'Maker / Read-Only'}
+                  </td>
+                  <td>
+                    <span class="badge ${u.status === 'Active' ? 'badge-emerald' : 'badge-rose'}">
+                      ${u.status}
+                    </span>
+                  </td>
+                  <td class="action-cell">
+                    ${u.id === state.currentUserId ? `
+                      <span class="badge badge-aqua" style="font-weight: 700; margin-right: 4px;">Active Context</span>
+                    ` : ''}
+                    <button class="btn btn-secondary btn-sm btn-edit-roles" data-id="${u.id}">Edit Roles</button>
+                  </td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `;
+  },
+
+  // --- TAB 2: Task Separation & Permissions Matrix ---
+  renderMatrixTab(state) {
+    const tasks = [
+      { name: 'Member Counter Deposits & Cash Inflow', teller: 'YES', mgr: 'YES', creditMaker: 'NO', creditChecker: 'NO', treasury: 'NO', audit: 'VIEW', board: 'VIEW' },
+      { name: 'Teller Limit Override & Cash Vault Reconcile', teller: 'NO', mgr: 'YES', creditMaker: 'NO', creditChecker: 'NO', treasury: 'VIEW', audit: 'VIEW', board: 'VIEW' },
+      { name: 'Loan Origination & KYC Risk Scoring (Maker)', teller: 'NO', mgr: 'YES', creditMaker: 'YES', creditChecker: 'NO', treasury: 'NO', audit: 'VIEW', board: 'VIEW' },
+      { name: 'Credit Committee Approval & Pacing Release (Checker)', teller: 'NO', mgr: 'TIER-1', creditMaker: 'NO', creditChecker: 'YES', treasury: 'NO', audit: 'VIEW', board: 'ESCALATION' },
+      { name: 'DFI Facility Drawdowns & T-Bill Placements', teller: 'NO', mgr: 'NO', creditMaker: 'NO', creditChecker: 'NO', treasury: 'YES', audit: 'VIEW', board: 'POLICY' },
+      { name: 'General Ledger Multi-Ledger Journal Adjustments', teller: 'NO', mgr: 'NO', creditMaker: 'NO', creditChecker: 'NO', treasury: 'YES', audit: 'VIEW', board: 'VIEW' },
+      { name: 'Parallel Non-Blocking EOD Execution', teller: 'NO', mgr: 'NO', creditMaker: 'NO', creditChecker: 'NO', treasury: 'YES', audit: 'VIEW', board: 'VIEW' },
+      { name: 'System Audit Trail & SASRA Returns Export', teller: 'NO', mgr: 'VIEW', creditMaker: 'NO', creditChecker: 'VIEW', treasury: 'VIEW', audit: 'YES', board: 'YES' },
+      { name: 'Macro Stress-Testing Scenario Sliders', teller: 'NO', mgr: 'NO', creditMaker: 'NO', creditChecker: 'NO', treasury: 'VIEW', audit: 'VIEW', board: 'YES' }
+    ];
+
+    const getStatusTag = (val) => {
+      if (val === 'YES') return `<span class="badge badge-emerald">ALLOWED</span>`;
+      if (val === 'NO') return `<span class="badge badge-rose">RESTRICTED</span>`;
+      if (val === 'VIEW') return `<span class="badge badge-muted">READ-ONLY</span>`;
+      return `<span class="badge badge-orange">${val}</span>`;
+    };
+
+    return `
+      <div style="display: flex; flex-direction: column; gap: 1rem;">
+        <div style="background: var(--accent-aqua-subtle); border: 1px solid rgba(20, 184, 166, 0.3); border-radius: var(--radius-md); padding: 0.85rem 1rem;">
+          <span style="font-size: 0.75rem; font-weight: 700; color: var(--accent-aqua);">
+            Institutional Segregation of Duties (SoD) Policy:
+          </span>
+          <div style="font-size: 0.775rem; color: var(--text-dim); margin-top: 0.25rem;">
+            Dual-control is strictly enforced across credit approvals and accounting journals. An operator who initiates a transaction as Maker cannot approve it as Checker.
+          </div>
+        </div>
+
+        <div class="table-responsive" style="max-height: 380px;">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Operational Task / Function</th>
+                <th>Branch Teller</th>
+                <th>Branch Mgr</th>
+                <th>Credit Maker</th>
+                <th>Credit Checker</th>
+                <th>Treasury</th>
+                <th>Audit</th>
+                <th>Board</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${tasks.map(t => `
+                <tr>
+                  <td class="cell-bold" style="font-size: 0.775rem;">${t.name}</td>
+                  <td>${getStatusTag(t.teller)}</td>
+                  <td>${getStatusTag(t.mgr)}</td>
+                  <td>${getStatusTag(t.creditMaker)}</td>
+                  <td>${getStatusTag(t.creditChecker)}</td>
+                  <td>${getStatusTag(t.treasury)}</td>
+                  <td>${getStatusTag(t.audit)}</td>
+                  <td>${getStatusTag(t.board)}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `;
+  },
+
+  // --- TAB 3: Add New Operator Form ---
+  renderAddUserTab(state) {
+    return `
+      <form id="form-add-user" style="display: flex; flex-direction: column; gap: 1rem;">
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+          <div class="form-group" style="margin: 0;">
+            <label class="form-label">Operator Full Name</label>
+            <input type="text" id="inp-u-name" class="form-control" placeholder="e.g. Mercy Chebet" required>
+          </div>
+
+          <div class="form-group" style="margin: 0;">
+            <label class="form-label">Official Corporate Email</label>
+            <input type="email" id="inp-u-email" class="form-control" placeholder="e.g. mercy.chebet@finage.co.ke" required>
+          </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+          <div class="form-group" style="margin: 0;">
+            <label class="form-label">Assigned Institutional Roles (Multi-select)</label>
+            <select id="inp-u-role" class="form-control" multiple size="4">
+              ${state.roles.map(r => `<option value="${r.id}">${r.name}</option>`).join('')}
+            </select>
+            <small style="color: var(--text-dim); display: block; margin-top: 4px;">Hold Ctrl/Cmd to select multiple roles.</small>
+          </div>
+
+          <div class="form-group" style="margin: 0;">
+            <label class="form-label">Branch Station</label>
+            <select id="inp-u-branch" class="form-control">
+              ${state.branches.map(b => `<option value="${b.id}|${b.name}">${b.name}</option>`).join('')}
+            </select>
+          </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+          <div class="form-group" style="margin: 0;">
+            <label class="form-label">Single Transaction Approval Ceiling (${Formatter.currencySymbol})</label>
+            <input type="number" id="inp-u-limit" class="form-control" value="25000" min="0" step="5000">
+          </div>
+
+          <div class="form-group" style="margin: 0;">
+            <label class="form-label">Daily Aggregate Approval Limit (${Formatter.currencySymbol})</label>
+            <input type="number" id="inp-u-daily" class="form-control" value="100000" min="0" step="10000">
+          </div>
+        </div>
+
+        <div style="display: flex; justify-content: flex-end; gap: 0.75rem; margin-top: 0.5rem;">
+          <button type="button" class="btn btn-secondary btn-close-user-modal">Cancel</button>
+          <button type="submit" class="btn btn-primary">
+            Create System User Account
+          </button>
+        </div>
+      </form>
+    `;
+  },
+
+  bindEvents(container, state) {
+    const modal = container.querySelector('#user-mgmt-modal');
+    if (!modal) return;
+
+    const closeBtns = container.querySelectorAll('.modal-close, .btn-close-user-modal');
+    closeBtns.forEach(btn => {
+      btn.addEventListener('click', () => {
+        modal.classList.remove('active');
+      });
+    });
+
+    const tabBtns = container.querySelectorAll('.input-tab-btn');
+    tabBtns.forEach(btn => {
+      btn.addEventListener('click', () => {
+        this.activeTab = btn.dataset.tab;
+        tabBtns.forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        const tabBody = container.querySelector('#user-mgmt-tab-body');
+        if (tabBody) {
+          tabBody.innerHTML = this.renderActiveTab(state);
+          this.bindTabSpecificEvents(container, state);
+        }
+      });
+    });
+
+    this.bindTabSpecificEvents(container, state);
+  },
+
+  bindTabSpecificEvents(container, state) {
+    const modal = container.querySelector('#user-mgmt-modal');
+
+
+    // Add user form submit
+    const addUserForm = container.querySelector('#form-add-user');
+    if (addUserForm) {
+      addUserForm.addEventListener('submit', (e) => {
+        e.preventDefault();
+        const name = container.querySelector('#inp-u-name')?.value;
+        const email = container.querySelector('#inp-u-email')?.value;
+        const roleSelect = container.querySelector('#inp-u-role');
+        const roles = Array.from(roleSelect.selectedOptions).map(opt => opt.value);
+        const branchParts = container.querySelector('#inp-u-branch')?.value.split('|');
+        const singleLimit = Number(container.querySelector('#inp-u-limit')?.value) || 0;
+        const dailyLimit = Number(container.querySelector('#inp-u-daily')?.value) || 0;
+
+        const newId = store.addUser({
+          name,
+          email,
+          roles: roles,
+          branchId: branchParts[0],
+          branchName: branchParts[1],
+          singleApprovalLimit: singleLimit,
+          dailyApprovalLimit: dailyLimit
+        });
+        
+        App.showToast(`Operator ${name} created (${newId}) with ${roles.length} roles.`, 'success');
+        modal.classList.remove('active');
+      });
+    }
+
+    // Danger Zone Purge Action
+    const btnPurge = container.querySelector('#btn-execute-purge');
+    if (btnPurge) {
+      btnPurge.addEventListener('click', async () => {
+        const pass = container.querySelector('#inp-purge-password')?.value;
+        if (pass !== 'admin123') {
+          App.showToast('Invalid authorization password.', 'danger');
+          return;
+        }
+        
+        if (confirm('CRITICAL WARNING: This will delete ALL data in the live Supabase database and reset the system. Proceed?')) {
+          btnPurge.textContent = 'Purging Database...';
+          btnPurge.disabled = true;
+          try {
+            await store.purgeSupabase();
+            App.showToast('System successfully purged and reset. Reloading...', 'success');
+            setTimeout(() => window.location.reload(), 1500);
+          } catch (err) {
+            console.error(err);
+            App.showToast('Failed to purge database: ' + err.message, 'danger');
+            btnPurge.textContent = 'Authenticate & Purge System';
+            btnPurge.disabled = false;
+          }
+        }
+      });
+    }
+
+    // Edit roles buttons
+    const editBtns = container.querySelectorAll('.btn-edit-roles');
+    editBtns.forEach(btn => {
+      btn.addEventListener('click', () => {
+        this.editingUserId = btn.dataset.id;
+        this.activeTab = 'edit';
+        
+        container.querySelectorAll('.input-tab-btn').forEach(b => b.classList.remove('active'));
+        
+        const tabBody = container.querySelector('#user-mgmt-tab-body');
+        if (tabBody) {
+          tabBody.innerHTML = this.renderActiveTab(state);
+          this.bindTabSpecificEvents(container, state);
+        }
+      });
+    });
+
+    // Edit user form submit
+    const editForm = container.querySelector('#form-edit-roles');
+    if (editForm) {
+      editForm.addEventListener('submit', (e) => {
+        e.preventDefault();
+        const roleSelect = container.querySelector('#inp-edit-role');
+        const roles = Array.from(roleSelect.selectedOptions).map(opt => opt.value);
+        
+        if (this.editingUserId) {
+          store.updateUserRoles(this.editingUserId, roles);
+          App.showToast(`Roles updated successfully.`, 'success');
+          
+          this.activeTab = 'users';
+          const tabs = container.querySelectorAll('.input-tab-btn');
+          if(tabs[0]) tabs[0].classList.add('active'); 
+          
+          const tabBody = container.querySelector('#user-mgmt-tab-body');
+          if (tabBody) {
+            tabBody.innerHTML = this.renderActiveTab(store.state);
+            this.bindTabSpecificEvents(container, store.state);
+          }
+        }
+      });
+      
+      const cancelBtn = container.querySelector('.btn-cancel-edit');
+      if (cancelBtn) {
+        cancelBtn.addEventListener('click', () => {
+          this.activeTab = 'users';
+          const tabs = container.querySelectorAll('.input-tab-btn');
+          if(tabs[0]) tabs[0].classList.add('active');
+          const tabBody = container.querySelector('#user-mgmt-tab-body');
+          if (tabBody) {
+            tabBody.innerHTML = this.renderActiveTab(store.state);
+            this.bindTabSpecificEvents(container, store.state);
+          }
+        });
+      }
+    }
+  },
+
+  open() {
+    const modal = document.getElementById('user-mgmt-modal');
+    if (modal) {
+      modal.classList.add('active');
+    }
+  }
+};
+
+window.UserManagementView = UserManagementView;

@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Finage OS v3 - Integrated SACCO / MFI Cash Flow & Liquidity Management System</title>
+  <meta name="description"
+    content="Orbit-R-grade Core Banking Foundation, Relationship Information Management (RIM), Real-Time GL, Embedded Workflow Pacing, and SASRA/CBK Compliance.">
+
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap"
+    rel="stylesheet">
+
+  <!-- Chart.js CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+
+  <!-- Finage OS Clean Design System Styles -->
+  <link rel="stylesheet" href="css/main.css">
+  <link rel="stylesheet" href="css/components.css">
+  <link rel="stylesheet" href="css/views.css">
+</head>
+
+<body>
+  <div id="app">
+    <!-- Top Navigation Header -->
+    <header class="top-header">
+      <div class="brand-section"
+        style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.25rem;">
+        <img src="images/logo.png" alt="Finage OS Logo" style="height: 36px; width: auto; object-fit: contain;">
+        <div class="brand-title" id="brand-title-display"
+          style="font-size: 0.85rem; letter-spacing: 0.05em; text-align: center;">
+          FINAGE OS
+        </div>
+      </div>
+
+      <!-- Role Access Switcher (Layer 9 Multi-Persona) -->
+      <nav class="role-nav" aria-label="Role View Switcher">
+        <button class="role-btn" data-role="member" title="Member Self-Service, 360 accounts, instant loan application">
+          Teller
+        </button>
+
+        <button class="role-btn" data-role="teller"
+          title="FOSA branch cash entry, till count reconciliation, counter desk">
+          Front Office
+        </button>
+
+        <button class="role-btn active" data-role="treasury"
+          title="Real-time multi-ledger GL, channel liquidity, maturity ladder">
+          Treasury
+        </button>
+
+        <button class="role-btn" data-role="credit"
+          title="Maker-Checker workflow inbox, Online NPA classification, Pacing engine">
+          Credit
+        </button>
+
+        <button class="role-btn" data-role="board"
+          title="Executive governance dashboard, system audit logs, SASRA returns, stress lab">
+          Board
+        </button>
+      </nav>
+
+      <!-- Global Utility Actions & Universal Input Trigger -->
+      <div class="header-actions">
+        <!-- AI/Sim/Test Controls (Optional) -->
+        <button id="btn-quick-deposit" class="btn btn-secondary btn-sm"
+          title="Simulate an instant Mobile-Money C2B bulk mobile deposit">
+          Simulate Mobile-Money Inflow
+        </button>
+
+
+
+        <!-- Secondary Action: Data Input -->
+        <button id="btn-open-input-hub" class="btn btn-outline" title="Open Universal Data Ingestion & Input Center">
+          + Data Input
+        </button>
+
+        <div style="width: 1px; height: 24px; background: var(--border-medium); margin: 0 0.25rem;"></div>
+
+        <!-- User Controls Cluster -->
+        <!-- Active User Badge (Injected by app.js) -->
+        <div id="active-user-badge" class="active-user-badge" title="Current active operator context">
+          <!-- Populated dynamically -->
+        </div>
+
+        <button id="btn-open-user-mgmt" class="header-btn" title="User Administration & Task Separation (RBAC)">
+          Users
+        </button>
+
+        <button id="btn-logout" class="header-btn" title="Sign Out">
+          Sign Out
+        </button>
+
+        <button id="sync-status-badge" class="header-btn sync-badge" title="Database Sync Protocol: Local cache synced with Supabase (Click to pull/push immediately)">
+          Local Only
+        </button>
+
+        <button id="btn-reset-data" class="header-btn" title="Reset system data to v3 baseline seeds">
+          Reset Data
+        </button>
+      </div>
+    </header>
+
+    <!-- Institutional Liquidity & Compliance Ticker Bar -->
+    <section id="liquidity-ticker-bar" class="liquidity-ticker-bar" aria-label="Real-time Financial Ticker">
+      <!-- Injected dynamically by App.js -->
+    </section>
+
+    <!-- Main Viewport for Role-Based Views -->
+    <main id="main-viewport" class="main-viewport">
+      <!-- Active View Component Injected Here -->
+    </main>
+
+    <!-- Modals & Widgets Layer -->
+    <div id="input-modal-mount"></div>
+    <div id="user-mgmt-mount"></div>
+    <div id="ai-widget-mount"></div>
+    <div id="client-selection-modal-mount"></div>
+
+    <!-- Toast Shelf Container -->
+    <div id="toast-shelf" class="toast-shelf" aria-live="polite"></div>
+  </div>
+
+  <!-- JavaScript Utilities & Services -->
+  <script src="js/utils/formatters.js"></script>
+  <script src="js/utils/chartManager.js"></script>
+  <script src="js/utils/exportService.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="js/supabaseClient.js"></script>
+  <script src="js/store.js"></script>
+  <script src="js/sync/supabaseSync.js"></script>
+
+  <!-- Core Engines (Layers 0, 0.5, 1, 2, 3, 4, 5, 7) -->
+  <script src="js/engine/coreBankingEngine.js"></script>
+
+  <script src="js/engine/rimEngine.js"></script>
+  <script src="js/engine/workflowEngine.js"></script>
+  <script src="js/engine/cashEngine.js"></script>
+  <script src="js/engine/forecastEngine.js"></script>
+  <script src="js/engine/portfolioEngine.js"></script>
+  <script src="js/engine/pacingEngine.js"></script>
+  <script src="js/engine/stressTestEngine.js"></script>
+  <script src="js/engine/auditService.js"></script>
+  <script src="js/engine/userManagementEngine.js"></script>
+  <script src="js/engine/aiAgentEngine.js"></script>
+
+  <!-- Role-Based Views (Layer 9) -->
+  <script src="js/views/landingView.js"></script>
+  <script src="js/views/loginView.js"></script>
+  <script src="js/views/inputModalView.js"></script>
+  <script src="js/views/userManagementView.js"></script>
+  <script src="js/views/aiWidgetView.js"></script>
+  <script src="js/views/clientSelectionModalView.js"></script>
+  <script src="js/views/memberPortalView.js"></script>
+  <script src="js/views/branchView.js"></script>
+  <script src="js/views/treasuryView.js"></script>
+  <script src="js/views/creditView.js"></script>
+  <script src="js/views/boardView.js"></script>
+
+  <!-- Application Bootstrap -->
+  <script src="js/app.js"></script>
+</body>
+
+</html>

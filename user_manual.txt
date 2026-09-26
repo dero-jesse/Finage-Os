@@ -1,0 +1,61 @@
+FINAGE OS - COMPREHENSIVE USER MANUAL
+=======================================
+
+1. INTRODUCTION
+----------------
+Finage OS is a comprehensive, institutional-grade core banking and financial management operating system. It provides a unified interface for retail members, branch tellers, credit officers, treasury managers, and board executives. The system is built on a Role-Based Access Control (RBAC) foundation that ensures operators only see the modules and data they are authorized to access.
+
+2. AUTHENTICATION & ROLE-BASED ACCESS CONTROL (RBAC)
+------------------------------------------------------
+The system utilizes a secure login gateway. Upon logging in with an official corporate email, the RBAC Engine evaluates the operator's assigned roles.
+- Users can hold multiple roles simultaneously.
+- Access to specific modules (e.g., Treasury, Credit) is strictly gated by the roles assigned.
+- System Administrators have exclusive access to the User Administration center (Alt + U), where they can onboard new operators, assign multiple roles, and configure single/daily transaction approval limits.
+
+3. SYSTEM COMPONENTS & MODULES
+-------------------------------
+
+### A. Member Self-Service Portal (Retail)
+Use Case: Allows registered retail members to view their balances, apply for mobile loans, and simulate mobile deposits (like M-Pesa).
+- Inputs: Mobile deposit amounts (simulated), Instant Loan applications (amount, term).
+- Outputs: Live account balances (Savings, Fixed Deposit, Share Capital), Active loan statuses.
+- Reports: Mini-statements of recent transactions, Loan amortization schedules.
+
+### B. Branch Operations (FOSA & Teller)
+Use Case: Designed for front-office branch tellers and branch managers to process over-the-counter cash transactions and reconcile vault balances.
+- Inputs: Member ID lookup, Cash Deposit/Withdrawal amounts, General Ledger (GL) account selections.
+- Outputs: Real-time update of Member Savings Balances and internal Cash Vault GLs.
+- Reports: Branch Vault reconciliation reports, Daily teller transaction logs, Teller limit override audit trails.
+
+### C. Credit & Non-Performing Asset (NPA) Management
+Use Case: Used by Credit Makers (Origination) and Credit Checkers (Approval) to process institutional loans, score KYC risk, and monitor portfolio health.
+- Inputs: Loan Application details (Principal, Interest Rate, Tenor, Product Type), Manual risk overrides.
+- Outputs: Automated KYC Risk Scoring, Loan Approval routing, Disbursement authorizations.
+- Reports: Portfolio-At-Risk (PAR) Metrics (PAR30, PAR90), Non-Performing Loans (NPL) ratio, Provisioning coverage reports.
+
+### D. Treasury & Liquidity Management
+Use Case: Utilized by Treasury Officers to manage institutional liquidity, inter-bank placements, and execute multi-ledger GL journal entries.
+- Inputs: Inter-bank transfer amounts, DFI facility drawdown requests, T-Bill placement instructions, Manual GL debit/credit journal entries.
+- Outputs: Updated Liquidity Coverage Ratio (LCR), Instant re-balancing of Central Bank/Commercial Bank GLs.
+- Reports: Real-time Liquidity Ticker (Cash equivalents vs. liabilities), Asset-Liability gap analysis, GL Trial Balance extracts.
+
+### E. Board Governance, Audit & Stress Lab
+Use Case: A read-only/executive dashboard for the Board of Directors and Internal Auditors to monitor systemic risk, view audit logs, and simulate economic shocks.
+- Inputs: Macro-economic stress sliders (e.g., NPL shock percentage, deposit flight simulation, interest rate hikes).
+- Outputs: Simulated impact on capital adequacy, liquidity buffers, and projected profitability.
+- Reports: Immutable System Audit Trail (capturing IP, User, GL Impact), SASRA/Central Bank Regulatory Returns formatting, AML/CFT threshold alerts.
+
+### F. Universal Data Ingestion Hub
+Use Case: Accessed via shortcut (Alt + N) or the top header, this is a rapid command center for ingesting external data batches.
+- Inputs: Raw CSV/JSON text data (e.g., M-Pesa Paybill statements, CRB credit scores, bulk payroll files).
+- Outputs: Parsed and validated JSON data ready for core banking ledger ingestion.
+- Reports: Ingestion success/failure logs, Data validation error matrices.
+
+4. SYSTEM SHORTCUTS
+--------------------
+- Alt + N : Open Universal Data Ingestion Hub
+- Alt + U : Open User Management & RBAC Center (System Admin Only)
+
+5. TRANSACTION WORKFLOWS (MAKER/CHECKER)
+------------------------------------------
+Transactions exceeding an operator's "Single Approval Limit" are automatically flagged and routed to the escalation queue. A checker with a higher limit (e.g., Branch Manager or Head of Credit) must review and authorize the transaction before GL impact occurs.

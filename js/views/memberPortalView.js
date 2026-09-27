@@ -317,6 +317,35 @@ const TellerDeskView = {
           </div>
         </div>
       `}
+
+      <div id="teller-confirm-modal" style="display: none; position: fixed; inset: 0; background: rgba(2, 6, 23, 0.62); z-index: 1000; align-items: center; justify-content: center; padding: 1rem;">
+        <div style="width: min(560px, 92vw); background: linear-gradient(180deg, #ffffff, #f8fafc); border: 1px solid rgba(148, 163, 184, 0.18); border-radius: 18px; box-shadow: 0 28px 44px rgba(15, 23, 42, 0.18); overflow: hidden;">
+          <div style="padding: 1.1rem 1.2rem; border-bottom: 1px solid rgba(148, 163, 184, 0.18); background: linear-gradient(180deg, rgba(15, 23, 42, 0.96), rgba(15, 23, 42, 0.98));">
+            <div style="font-size: 0.72rem; font-weight: 800; color: #cbd5e1; text-transform: uppercase; letter-spacing: 0.1em;">Transaction Confirmation</div>
+            <div style="font-size: 1.05rem; font-weight: 800; color: #f8fafc; margin-top: 0.2rem;">Review before posting</div>
+          </div>
+
+          <div style="padding: 1.2rem; display: flex; flex-direction: column; gap: 0.9rem;">
+            <div style="padding: 0.9rem 1rem; border-radius: 12px; background: rgba(15, 23, 42, 0.04); border: 1px solid rgba(148, 163, 184, 0.14);">
+              <div style="font-size: 0.72rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 0.4rem;">Member</div>
+              <div id="confirm-member-name" style="font-weight: 800; color: var(--text-main); font-size: 1rem;">—</div>
+            </div>
+
+            <div id="teller-confirm-summary" style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
+              <!-- injected by JS -->
+            </div>
+
+            <div style="display: flex; align-items: center; gap: 0.55rem; padding: 0.8rem 0.9rem; border-radius: 12px; background: rgba(239, 68, 68, 0.05); border: 1px solid rgba(239, 68, 68, 0.18); color: var(--accent-rose); font-size: 0.8rem; font-weight: 700;">
+              ⚠ This action will post the transaction immediately after confirmation.
+            </div>
+
+            <div style="display: flex; justify-content: flex-end; gap: 0.7rem; margin-top: 0.2rem;">
+              <button id="btn-cancel-tx-post" class="btn btn-secondary" type="button">Cancel</button>
+              <button id="btn-confirm-tx-post" class="btn btn-emerald" type="button">Confirm &amp; Post</button>
+            </div>
+          </div>
+        </div>
+      </div>
     `;
 
     this.bindGlobalEvents(container, state);
@@ -363,6 +392,11 @@ const TellerDeskView = {
     const txWorkspace        = container.querySelector('#transaction-workspace');
     const txWorkspaceTitle   = container.querySelector('#tx-workspace-title');
     const initTxBtns         = container.querySelectorAll('.btn-init-tx');
+    const confirmModal       = container.querySelector('#teller-confirm-modal');
+    const confirmSummary     = container.querySelector('#teller-confirm-summary');
+    const confirmMemberName  = container.querySelector('#confirm-member-name');
+    const confirmCancel      = container.querySelector('#btn-cancel-tx-post');
+    const confirmPost        = container.querySelector('#btn-confirm-tx-post');
 
     // Populate currency select from CURRENCIES map
     Object.entries(CURRENCIES).forEach(([code, cfg]) => {
@@ -509,6 +543,46 @@ const TellerDeskView = {
     // --- Initial denomination render ---
     renderDenominations();
 
+    // --- Confirmation modal helpers ---
+    const getSummaryRows = () => {
+      const txType = txTypeSelect.value;
+      const amount = Number(txAmountInput.value) || 0;
+      const def = TX_TYPES.find(t => t.type === txType) || TX_TYPES[0];
+      const currency = CURRENCIES[currencySelect.value] || CURRENCIES.UGX;
+      let calcTotal = 0;
+      container.querySelectorAll('.tx-denom').forEach(inp => {
+        calcTotal += Number(inp.dataset.denom) * (parseInt(inp.value) || 0);
+      });
+
+      const loanIdx = parseInt(container.querySelector('#teller-loan-select')?.value);
+      const selectedLoan = (!isNaN(loanIdx) && profile.activeLoans[loanIdx]) ? profile.activeLoans[loanIdx] : null;
+
+      const rows = [
+        { label: 'Transaction', value: def.label },
+        { label: 'Amount', value: `${currency.symbol} ${Formatter.money(amount)}` },
+        { label: 'Account Name', value: profile.name },
+        { label: 'Account Number', value: profile.accountNumber || profile.id || 'N/A' }
+      ];
+
+      return rows;
+    };
+
+    const openPostConfirmation = () => {
+      const rows = getSummaryRows();
+      confirmMemberName.textContent = profile.name;
+      confirmSummary.innerHTML = rows.map(r => `
+        <div style="padding: 0.7rem 0.8rem; border: 1px solid rgba(148,163,184,0.18); border-radius: 10px; background: rgba(15,23,42,0.02);">
+          <div style="font-size: 0.68rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: 0.25rem;">${r.label}</div>
+          <div style="font-size: 0.82rem; font-weight: 700; color: var(--text-main); word-break: break-word;">${r.value}</div>
+        </div>
+      `).join('');
+      if (confirmModal) confirmModal.style.display = 'flex';
+    };
+
+    const closePostConfirmation = () => {
+      if (confirmModal) confirmModal.style.display = 'none';
+    };
+
     // --- POST BUTTON ---
     postBtn.addEventListener('click', () => {
       const txType = txTypeSelect.value;
@@ -520,51 +594,69 @@ const TellerDeskView = {
         return;
       }
 
-      const def = TX_TYPES.find(t => t.type === txType) || TX_TYPES[0];
-      const loanIdx = parseInt(container.querySelector('#teller-loan-select')?.value);
-      const loanId  = (!isNaN(loanIdx) && profile.activeLoans[loanIdx]) ? profile.activeLoans[loanIdx].loanId : null;
-
-      const result = CoreBankingEngine.executeTransaction(state, {
-        type: `Teller ${txType}`,
-        memberId: profile.id,
-        loanId,
-        amount,
-        channel: 'Branch FOSA Counter',
-        debitGL: def.debitGL,
-        creditGL: def.creditGL,
-        description: `FOSA Teller ${txType} via Denomination Desk`
-      });
-
-      if (!result) {
-        App.showToast('Transaction rejected by core banking engine. Check permissions or balance.', 'danger');
-        return;
-      }
-
-      // Update loan outstanding balance in local profile reference (no re-render needed)
-      if (txType === 'Loan Payment' && !isNaN(loanIdx) && profile.activeLoans[loanIdx]) {
-        profile.activeLoans[loanIdx].outstandingBalance = Math.max(0, profile.activeLoans[loanIdx].outstandingBalance - amount);
-        // Refresh the loan dropdown label
-        const loanOpt = container.querySelector(`#teller-loan-select option[value="${loanIdx}"]`);
-        if (loanOpt) {
-          const l = profile.activeLoans[loanIdx];
-          loanOpt.textContent = `${l.product} — ${l.loanId} (Bal: ${Formatter.money(l.outstandingBalance)})`;
-        }
-      }
-
-      // Update savings balance stat card in-place
-      const savingsEl = container.querySelector('#teller-savings-balance');
-      if (savingsEl) {
-        const updatedMember = store.state.members.find(m => m.id === profile.id);
-        if (updatedMember) savingsEl.textContent = Formatter.money(updatedMember.savingsBalance);
-      }
-
-      App.showToast(`✓ ${def.label} of ${Formatter.money(amount)} posted — GL Dr ${def.debitGL} / Cr ${def.creditGL}.`, 'success');
-
-      // Reset denomination desk
-      txAmountInput.value = '0';
-      container.querySelectorAll('.tx-denom').forEach(inp => inp.value = '0');
-      validateTransaction();
+      openPostConfirmation();
     });
+
+    if (confirmCancel) {
+      confirmCancel.addEventListener('click', closePostConfirmation);
+    }
+
+    if (confirmPost) {
+      confirmPost.addEventListener('click', () => {
+        const txType = txTypeSelect.value;
+        const amount = Number(txAmountInput.value);
+        const issue  = getTransactionIssue();
+
+        if (amount <= 0 || issue) {
+          closePostConfirmation();
+          App.showToast(issue || 'Transaction validation failed.', 'danger');
+          return;
+        }
+
+        const def = TX_TYPES.find(t => t.type === txType) || TX_TYPES[0];
+        const loanIdx = parseInt(container.querySelector('#teller-loan-select')?.value);
+        const loanId  = (!isNaN(loanIdx) && profile.activeLoans[loanIdx]) ? profile.activeLoans[loanIdx].loanId : null;
+
+        const result = CoreBankingEngine.executeTransaction(state, {
+          type: `Teller ${txType}`,
+          memberId: profile.id,
+          loanId,
+          amount,
+          channel: 'Branch FOSA Counter',
+          debitGL: def.debitGL,
+          creditGL: def.creditGL,
+          description: `FOSA Teller ${txType} via Denomination Desk`
+        });
+
+        closePostConfirmation();
+
+        if (!result) {
+          App.showToast('Transaction rejected by core banking engine. Check permissions or balance.', 'danger');
+          return;
+        }
+
+        if (txType === 'Loan Payment' && !isNaN(loanIdx) && profile.activeLoans[loanIdx]) {
+          profile.activeLoans[loanIdx].outstandingBalance = Math.max(0, profile.activeLoans[loanIdx].outstandingBalance - amount);
+          const loanOpt = container.querySelector(`#teller-loan-select option[value="${loanIdx}"]`);
+          if (loanOpt) {
+            const l = profile.activeLoans[loanIdx];
+            loanOpt.textContent = `${l.product} — ${l.loanId} (Bal: ${Formatter.money(l.outstandingBalance)})`;
+          }
+        }
+
+        const savingsEl = container.querySelector('#teller-savings-balance');
+        if (savingsEl) {
+          const updatedMember = store.state.members.find(m => m.id === profile.id);
+          if (updatedMember) savingsEl.textContent = Formatter.money(updatedMember.savingsBalance);
+        }
+
+        App.showToast(`✓ ${def.label} of ${Formatter.money(amount)} posted — GL Dr ${def.debitGL} / Cr ${def.creditGL}.`, 'success');
+
+        txAmountInput.value = '0';
+        container.querySelectorAll('.tx-denom').forEach(inp => inp.value = '0');
+        validateTransaction();
+      });
+    }
   }
 };
 

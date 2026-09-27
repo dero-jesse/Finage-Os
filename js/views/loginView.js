@@ -6,37 +6,39 @@
 const LoginView = {
   render(container, state) {
     container.innerHTML = `
-      <div class="login-wrapper" style="display: flex; height: 100vh; width: 100vw; background-color: #f2f5f3; background-image: radial-gradient(rgba(4, 120, 87, 0.12) 1px, transparent 1px); background-size: 24px 24px; align-items: center; justify-content: center; position: fixed; top: 0; left: 0; z-index: 9999;">
-        <div class="glass-panel" style="width: 440px; padding: 2.25rem; display: flex; flex-direction: column; gap: 1.25rem; text-align: center; border-top: 4px solid var(--accent-green-dark); box-shadow: var(--shadow-lg);">
+      <div class="login-wrapper" style="display: flex; height: 100vh; width: 100vw; background:
+        radial-gradient(circle at top left, rgba(16,185,129,0.12), transparent 25%),
+        linear-gradient(135deg, #f5faf6 0%, #eef8f3 100%);
+        align-items: center; justify-content: center; position: fixed; top: 0; left: 0; z-index: 9999;">
+        <div class="glass-panel" style="width: 440px; padding: 2rem 2rem 1.5rem; display: flex; flex-direction: column; gap: 1.1rem; text-align: center; border-top: 6px solid var(--accent-green-dark); box-shadow: 0 26px 60px rgba(11, 52, 43, 0.12); border-radius: 20px; background: rgba(255,255,255,0.86); backdrop-filter: blur(5px);">
           
-          <div style="display: flex; flex-direction: column; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem;">
-            <span class="view-meta-tag">[ IDENTITY & ACCESS GATEWAY ]</span>
-            <div class="brand-title" style="font-size: 1.35rem; color: var(--accent-green-darkest);">
-              FINAGE OS <span class="brand-tag">v3 Core</span>
+          <div style="display: flex; align-items: center; justify-content: center; gap: 0.8rem; margin-bottom: 0.2rem; flex-wrap: wrap;">
+            <img src="images/logo.png" alt="Finage OS logo" style="width: 68px; height: auto; object-fit: contain; filter: drop-shadow(0 8px 12px rgba(21, 128, 61, 0.18));">
+            <div class="brand-title" style="font-size: 1.35rem; color: var(--accent-green-darkest); letter-spacing: -0.02em;">
+              FINAGE OS
             </div>
-            <div style="font-size: 0.775rem; color: var(--text-dim);">Role-Based Operator Authentication</div>
           </div>
 
-          <form id="login-form" style="display: flex; flex-direction: column; gap: 1rem; text-align: left;">
+          <form id="login-form" style="display: flex; flex-direction: column; gap: 0.9rem; text-align: left;">
             <div class="form-group">
-              <label class="form-label">Corporate Operator Email</label>
+              <label class="form-label" style="font-size: 0.72rem; letter-spacing: 0.08em; text-transform: uppercase;">Email</label>
               <input type="email" id="login-email" class="form-control" placeholder="operator@finage.co.ke" value="caroline.wanjala@finage.co.ke" required>
             </div>
             
             <div class="form-group">
-              <label class="form-label">Security Credential / Passkey</label>
+              <label class="form-label" style="font-size: 0.72rem; letter-spacing: 0.08em; text-transform: uppercase;">Passkey</label>
               <input type="password" id="login-password" class="form-control" placeholder="••••••••" value="institutionsafe2026" required>
             </div>
 
-            <button type="submit" class="btn btn-primary" style="width: 100%; justify-content: center; padding: 0.65rem 1rem; font-weight: 800; letter-spacing: 0.04em;">
-              AUTHORIZE & ENTER PORTAL
+            <button type="submit" class="btn btn-primary" style="width: 100%; justify-content: center; padding: 0.72rem 1rem; font-weight: 800; letter-spacing: 0.04em; border-radius: 12px; background: linear-gradient(180deg, var(--accent-green-dark), #0f766e); box-shadow: 0 12px 22px rgba(16,185,129,0.18);">
+              ENTER
             </button>
           </form>
 
           <!-- Quick Operator Select Presets -->
           <div style="border-top: 1px solid var(--border-subtle); padding-top: 1rem; text-align: left;">
             <div style="font-size: 0.7rem; font-weight: 700; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.65rem;">
-              Instant Operator Fast-Login:
+              QUICK ACCESS
             </div>
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.45rem;">
               <button class="btn btn-secondary btn-sm btn-quick-login" data-email="admin@finage.co.ke" style="font-size: 0.68rem; justify-content: flex-start; text-align: left;">

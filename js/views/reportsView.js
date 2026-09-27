@@ -25,13 +25,10 @@ const ReportsView = {
         <div class="modal-container" style="max-width: 1100px; border-radius: 18px; overflow: hidden;">
           <div class="modal-header" style="padding: 1.25rem 1.5rem; background: linear-gradient(180deg, rgba(15,23,42,0.92), rgba(15,23,42,0.98)); border-bottom: 1px solid rgba(148,163,184,0.2);">
             <div>
-              <div class="modal-title" style="font-size: 1.05rem; letter-spacing: 0.08em; text-transform: uppercase; color: #e2e8f0;">Institutional Reporting Console</div>
-              <span style="font-size: 0.75rem; color: rgba(148,163,184,0.9); letter-spacing: 0.04em; text-transform: uppercase;">
-                Admin-only operational reporting & export workflow
-              </span>
+              <div class="modal-title" style="font-size: 1rem; letter-spacing: 0.06em; text-transform: uppercase; color: #e2e8f0;">Report Hub</div>
             </div>
-            <button class="modal-close" id="btn-close-reports-modal" title="Close reports" style="font-family: var(--font-mono); font-size: 0.85rem; font-weight: 700; padding: 0.35rem 0.7rem; border: 1px solid rgba(148,163,184,0.25); border-radius: 10px; background: rgba(15,23,42,0.6); color: #dbeafe; cursor: pointer;">
-              ✕ Close
+            <button class="modal-close" id="btn-close-reports-modal" title="Close reports" style="font-family: var(--font-mono); font-size: 0.8rem; font-weight: 700; padding: 0.35rem 0.7rem; border: 1px solid rgba(148,163,184,0.25); border-radius: 10px; background: rgba(15,23,42,0.6); color: #dbeafe; cursor: pointer;">
+              ✕
             </button>
           </div>
 
@@ -55,12 +52,12 @@ const ReportsView = {
 
   getCategoryButtons() {
     return [
-      { id: 'client-management', label: 'Client Management' },
-      { id: 'savings-management', label: 'Savings Management' },
-      { id: 'time-deposits', label: 'Time / Fixed Deposits' },
+      { id: 'client-management', label: 'Clients' },
+      { id: 'savings-management', label: 'Savings' },
+      { id: 'time-deposits', label: 'Fixed Deposits' },
       { id: 'shares-module', label: 'Shares' },
-      { id: 'loan-portfolio', label: 'Loan Portfolio' },
-      { id: 'general-ledger', label: 'General Ledger' }
+      { id: 'loan-portfolio', label: 'Loans' },
+      { id: 'general-ledger', label: 'Ledger' }
     ];
   },
 
@@ -99,8 +96,8 @@ const ReportsView = {
                 </div>
                 <span class="badge badge-aqua">${rows.length} record(s)</span>
               </div>
-              <p style="margin: 0; color: var(--text-dim); font-size: 0.8rem; line-height: 1.6;">
-                ${category.description}
+              <p style="margin: 0; color: var(--text-dim); font-size: 0.75rem; line-height: 1.5;">
+                ${category.description.split(' ').slice(0, 10).join(' ')}${category.description.split(' ').length > 10 ? '…' : ''}
               </p>
             </div>
 

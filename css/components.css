@@ -11,10 +11,10 @@
 }
 
 .stat-card {
-  background: #ffffff;
-  border: 1px solid var(--border-medium);
+  background: linear-gradient(180deg, rgba(255,255,255,0.98), rgba(250,252,255,0.98));
+  border: 1px solid rgba(148, 163, 184, 0.18);
   border-top: 3px solid var(--accent-green);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-md);
   padding: 1.25rem 1.35rem;
   display: flex;
   flex-direction: column;
@@ -37,7 +37,7 @@
 }
 
 .stat-card:hover {
-  border-color: var(--accent-green);
+  border-color: rgba(20, 184, 166, 0.28);
   transform: translateY(-2px);
   box-shadow: var(--shadow-md);
 }
@@ -115,9 +115,9 @@
 }
 
 .glass-panel {
-  background: #ffffff;
-  border: 1px solid var(--border-medium);
-  border-radius: var(--radius-md);
+  background: linear-gradient(180deg, rgba(255,255,255,0.98), rgba(247,250,252,0.96));
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: var(--radius-lg);
   padding: 1.35rem 1.5rem;
   position: relative;
   box-shadow: var(--shadow-xs);
@@ -135,8 +135,8 @@
   align-items: center;
   justify-content: space-between;
   margin-bottom: 1.15rem;
-  padding-bottom: 0.75rem;
-  border-bottom: 1px solid var(--border-subtle);
+  padding-bottom: 0.8rem;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.14);
   flex-wrap: wrap;
   gap: 0.75rem;
 }

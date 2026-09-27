@@ -2,42 +2,42 @@
 @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500,600,700,800&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap');
 
 :root {
-  --bg-app: #edf4fb;
+  --bg-app: #f4f7fb;
   --bg-surface: #ffffff;
-  --bg-surface-alt: #f5f8fc;
-  --bg-surface-soft: #ebf2fa;
+  --bg-surface-alt: #f8fafc;
+  --bg-surface-soft: #eef4f8;
   --bg-panel: rgba(15, 23, 42, 0.78);
-  --bg-surface-glass: rgba(255, 255, 255, 0.84);
+  --bg-surface-glass: rgba(255, 255, 255, 0.9);
 
-  --border-subtle: #e7edf5;
-  --border-medium: #d5dfeb;
-  --border-strong: #b9c6d8;
+  --border-subtle: #edf2f7;
+  --border-medium: #dfe7f1;
+  --border-strong: #c9d6e6;
 
   --text-main: #0f172a;
-  --text-muted: #344155;
-  --text-dim: #59697d;
+  --text-muted: #2f3d52;
+  --text-dim: #5d6d82;
   --text-inverse: #ffffff;
 
   --accent-green-darkest: #0f172a;
-  --accent-green-dark: #1d4ed8;
-  --accent-green: #2563eb;
-  --accent-green-hover: #1e40af;
-  --accent-green-bright: #60a5fa;
-  --accent-green-light: #edf5ff;
-  --accent-green-subtle: #f5f8ff;
+  --accent-green-dark: #0f766e;
+  --accent-green: #14b8a6;
+  --accent-green-hover: #0d9488;
+  --accent-green-bright: #5eead4;
+  --accent-green-light: #ecfdf5;
+  --accent-green-subtle: #f4fffb;
 
-  --accent-primary: #2563eb;
-  --accent-primary-hover: #1d4ed8;
-  --accent-primary-light: #edf5ff;
-  --accent-primary-soft: #edf5ff;
+  --accent-primary: #0f766e;
+  --accent-primary-hover: #0d9488;
+  --accent-primary-light: #ebfffb;
+  --accent-primary-soft: #f3fffd;
   --accent-aqua: #0891b2;
   --accent-aqua-light: #ecfeff;
-  --accent-aqua-subtle: #ecfeff;
+  --accent-aqua-subtle: #f0fdff;
   --accent-orange: #d97706;
   --accent-orange-light: #fff7ed;
-  --accent-orange-subtle: #fff7ed;
-  --accent-emerald: #2563eb;
-  --accent-emerald-light: #edf5ff;
+  --accent-orange-subtle: #fffbf1;
+  --accent-emerald: #0f766e;
+  --accent-emerald-light: #ecfdf5;
   --accent-cyan: #0891b2;
   --accent-cyan-light: #ecfeff;
   --accent-amber: #d97706;
@@ -48,9 +48,9 @@
   --accent-purple-light: #f5f3ff;
 
   --shadow-xs: 0 1px 2px rgba(15, 23, 42, 0.04);
-  --shadow-sm: 0 6px 18px rgba(15, 23, 42, 0.06);
-  --shadow-md: 0 14px 30px rgba(15, 23, 42, 0.08);
-  --shadow-lg: 0 22px 52px rgba(15, 23, 42, 0.12);
+  --shadow-sm: 0 8px 22px rgba(15, 23, 42, 0.06);
+  --shadow-md: 0 16px 32px rgba(15, 23, 42, 0.08);
+  --shadow-lg: 0 26px 60px rgba(15, 23, 42, 0.12);
 
   --radius-xs: 6px;
   --radius-sm: 10px;
@@ -89,8 +89,8 @@ html, body {
   width: 100%;
   min-height: 100vh;
   background:
-    radial-gradient(circle at top, rgba(37, 99, 235, 0.09), transparent 28%),
-    linear-gradient(180deg, #f9fbff 0%, #edf3f9 100%);
+    radial-gradient(circle at top, rgba(20, 184, 166, 0.08), transparent 26%),
+    linear-gradient(180deg, #f8fafb 0%, #eef5f6 100%);
   color: var(--text-main);
   font-family: var(--font-sans);
   font-size: 13.5px;
@@ -133,12 +133,12 @@ html, body {
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
-  padding: 0.75rem 2rem 0.8rem;
-  background: linear-gradient(180deg, rgba(255,255,255,0.96), rgba(247,250,255,0.9));
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border-bottom: 1px solid var(--border-subtle);
-  box-shadow: 0 1px 0 rgba(15, 23, 42, 0.02), 0 8px 18px rgba(37, 99, 235, 0.04);
+  padding: 0.8rem 2rem 0.9rem;
+  background: linear-gradient(180deg, rgba(255,255,255,0.96), rgba(249,251,252,0.9));
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.04);
 }
 
 .brand-section {
@@ -176,12 +176,12 @@ html, body {
 .role-nav {
   display: flex;
   align-items: center;
-  background: var(--bg-surface-alt);
+  background: linear-gradient(180deg, #f7fafc, #f3f7fb);
   padding: 4px;
-  border: 1px solid var(--border-medium);
+  border: 1px solid rgba(148, 163, 184, 0.18);
   border-radius: var(--radius-pill);
   gap: 4px;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9);
 }
 
 .role-btn {
@@ -209,10 +209,10 @@ html, body {
 }
 
 .role-btn.active {
-  background: linear-gradient(180deg, #ffffff 0%, #edf5ff 100%);
+  background: linear-gradient(180deg, #ffffff 0%, #ebfffb 100%);
   color: var(--accent-primary);
-  border-color: rgba(37, 99, 235, 0.14);
-  box-shadow: 0 6px 18px rgba(37, 99, 235, 0.08);
+  border-color: rgba(15, 118, 110, 0.18);
+  box-shadow: 0 10px 24px rgba(15, 118, 110, 0.11);
 }
 
 .role-btn.active::after {

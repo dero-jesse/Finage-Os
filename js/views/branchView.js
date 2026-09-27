@@ -52,8 +52,8 @@ const BranchView = {
       <!-- View Header -->
       <div class="view-header-row">
         <div class="view-heading-group">
-          <h1>FOSA — Branch Oversight</h1>
-          <p>Branch supervision, teller audit, and approval of transactions above teller limit</p>
+          <h1>FOSA</h1>
+          <p>Branch oversight and approvals</p>
         </div>
         <div class="view-actions-group" style="display: flex; gap: 0.5rem; align-items: center;">
           <div class="form-group" style="margin: 0; min-width: 240px;">
@@ -66,7 +66,7 @@ const BranchView = {
             </select>
           </div>
           <button id="btn-submit-eod-reconciliation" class="btn btn-primary">
-            Submit EOD Cash Sheet
+            Submit Cash Sheet
           </button>
         </div>
       </div>
@@ -129,7 +129,7 @@ const BranchView = {
           <!-- ===== APPROVAL QUEUE ===== -->
           <div class="panel-header">
             <div class="panel-title-wrap">
-              <span class="panel-title">Branch Manager Approval Queue</span>
+              <span class="panel-title">Approval Queue</span>
             </div>
             <span class="badge ${pendingApprovals.length > 0 ? 'badge-rose' : 'badge-emerald'}">
               ${pendingApprovals.length} Pending
@@ -189,11 +189,10 @@ const BranchView = {
           <!-- Authority Notice -->
           <div style="background: var(--accent-green-light); border: 1px solid var(--accent-green); padding: 0.75rem 1rem; margin-bottom: 1.5rem; display: flex; align-items: flex-start; gap: 0.75rem;">
             <div style="font-size: 0.8rem; color: var(--text-muted); line-height: 1.5; flex: 1;">
-              <strong style="color: var(--accent-green-dark); text-transform: uppercase;">[NOTICE] Cash Transaction Authority — Teller Only.</strong>
-              Counter deposits, withdrawals, and repayments are posted at the Teller Desk.
-              Transactions <strong>above the teller cash limit</strong> are held and routed here for approval.
+              <strong style="color: var(--accent-green-dark); text-transform: uppercase;">[NOTICE] Teller-only posting.</strong>
+              Counter cash is posted at the teller desk. Transactions above the limit are routed for review.
               <div style="margin-top: 0.6rem; display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
-                <span style="font-size: 0.78rem;">Current teller limit for <strong>${currentBranch.name}:</strong></span>
+                <span style="font-size: 0.78rem;">Limit for <strong>${currentBranch.name}:</strong></span>
                 <span style="font-family: var(--font-mono); font-weight: 800; color: var(--accent-green-dark); font-size: 1rem;" id="teller-limit-display">${Formatter.money(tellerCashLimit)}</span>
                 <input type="number" id="inp-teller-limit" class="form-control" value="${tellerCashLimit}" min="1000" step="1000"
                   style="width: 130px; padding: 0.3rem 0.5rem; font-size: 0.82rem; font-family: var(--font-mono); font-weight: 700;">
@@ -209,11 +208,11 @@ const BranchView = {
 
           <!-- ===== KYC ONBOARDING WIZARD ===== -->
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
-            <span style="font-size: 0.9rem; font-weight: 700; color: var(--accent-green-dark); text-transform: uppercase;">New Member KYC &amp; Account Onboarding</span>
+            <span style="font-size: 0.9rem; font-weight: 700; color: var(--accent-green-dark); text-transform: uppercase;">Member Onboarding</span>
             <div class="wizard-indicators" style="display: flex; gap: 0.5rem;">
-              <span class="badge" id="wiz-step-1">Step 1: Bio-Data</span>
-              <span class="badge" id="wiz-step-2">Step 2: Accounts</span>
-              <span class="badge" id="wiz-step-3">Step 3: Consent</span>
+              <span class="badge" id="wiz-step-1">Step 1</span>
+              <span class="badge" id="wiz-step-2">Step 2</span>
+              <span class="badge" id="wiz-step-3">Step 3</span>
             </div>
           </div>
 

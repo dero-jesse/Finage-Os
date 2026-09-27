@@ -14,10 +14,10 @@ const InputModalView = {
           <div class="modal-header">
             <div>
               <div class="modal-title">
-                Data Ingestion &amp; Input Center
+                Data Hub
               </div>
               <span style="font-size: 0.75rem; color: var(--text-dim);">
-                Real-time posting, automated GL double-entry preview, and validation guardrails
+                Posting and controls
               </span>
             </div>
             <button class="modal-close" id="btn-close-input-modal" title="Close modal" style="font-family: var(--font-mono); font-size: 0.85rem; font-weight: 700; padding: 0.3rem 0.6rem; border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); background: var(--bg-surface); color: var(--text-muted); cursor: pointer;">
@@ -31,19 +31,19 @@ const InputModalView = {
               0. New Member
             </button>
             <button class="input-tab-btn ${this.activeTab === 'transactions' ? 'active' : ''}" data-tab="transactions">
-              1. Member Transactions
+              1. Transactions
             </button>
             <button class="input-tab-btn ${this.activeTab === 'loans' ? 'active' : ''}" data-tab="loans">
-              2. Loan Application
+              2. Loans
             </button>
             <button class="input-tab-btn ${this.activeTab === 'dfi' ? 'active' : ''}" data-tab="dfi">
-              3. DFI / Borrowing Drawdown
+              3. DFI
             </button>
             <button class="input-tab-btn ${this.activeTab === 'opex' ? 'active' : ''}" data-tab="opex">
-              4. OpEx Schedule
+              4. Opex
             </button>
             <button class="input-tab-btn ${this.activeTab === 'bulk' ? 'active' : ''}" data-tab="bulk">
-              5. Bulk CSV Ingestion
+              5. CSV
             </button>
           </div>
 
@@ -125,7 +125,7 @@ const InputModalView = {
 
         <div style="background: var(--bg-surface-elevated); padding: 1rem; border-radius: var(--radius-md); border: 1px dashed var(--border-subtle);">
           <span style="font-size: 0.85rem; font-weight: 700; color: #fff; margin-bottom: 0.5rem; display: block;">
-            Initial Account Establish & Double-Entry Funding
+            Opening Setup
           </span>
           <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem; align-items: end;">
             <div class="form-group" style="margin: 0;">
@@ -149,7 +149,7 @@ const InputModalView = {
             </div>
           </div>
           <div style="font-size: 0.725rem; color: var(--text-dim); margin-top: 0.5rem;">
-            If opening deposit > 0, an automated Double-Entry GL post (Dr Cash / Cr Selected Account Type) will be posted instantly with zero-batch delay.
+            Opening deposits post immediately to the selected account.
           </div>
         </div>
 
@@ -180,7 +180,7 @@ const InputModalView = {
           </div>
 
           <div class="form-group" style="margin: 0;">
-            <label class="form-label">Transaction Category (Double-Entry)</label>
+            <label class="form-label">Transaction Type</label>
             <select id="inp-tx-category" class="form-control">
               <option value="Member Deposit">Member Savings Deposit (Cr 2010 · Liability)</option>
               <option value="Member Withdrawal">Member Cash Withdrawal (Dr 2010 · Liability)</option>
@@ -214,7 +214,7 @@ const InputModalView = {
         <!-- Real-Time GL Impact Preview Box -->
         <div style="background: var(--accent-aqua-subtle); border: 1px solid rgba(20, 184, 166, 0.3); border-radius: var(--radius-md); padding: 0.85rem 1rem;">
           <span style="font-size: 0.725rem; font-weight: 700; color: var(--accent-aqua); text-transform: uppercase; letter-spacing: 0.04em;">
-            Automated Zero-Batch Double-Entry GL Impact:
+            GL Impact:
           </span>
           <div id="gl-preview-text" style="font-family: var(--font-mono); font-size: 0.85rem; font-weight: 600; color: var(--text-main); margin-top: 0.35rem;">
             Dr 1010 Branch Vault & Till Cash $15,000 / Cr 2010 Member Demand Deposits $15,000

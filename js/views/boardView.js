@@ -35,8 +35,8 @@ const BoardView = {
       <!-- View Header -->
       <div class="view-header-row">
         <div class="view-heading-group">
-          <h1>Board & Executive Governance Dashboard</h1>
-          <p>Macro cash flow projections, system-level audit logs, SASRA regulatory returns, and liquidity stress testing</p>
+          <h1>Board Dashboard</h1>
+          <p>Liquidity, risk, and controls</p>
         </div>
         <div class="view-actions-group">${newActions}</div>
       </div>
@@ -101,7 +101,7 @@ const BoardView = {
         <div class="glass-panel col-12">
           <div class="panel-header">
             <div class="panel-title-wrap">
-              <span class="panel-title">Institutional Inflows vs Outflows Cash Projection Schedule</span>
+              <span class="panel-title">Cash Projection</span>
             </div>
             <div class="panel-actions">
               <div class="horizon-tabs">
@@ -129,7 +129,7 @@ const BoardView = {
         <div class="glass-panel col-12">
           <div class="panel-header">
             <div class="panel-title-wrap">
-              <span class="panel-title" style="color: var(--accent-rose);">Interactive Liquidity Stress-Testing Laboratory</span>
+              <span class="panel-title" style="color: var(--accent-rose);">Stress Testing</span>
             </div>
             <span class="badge badge-rose">Scenario Simulation</span>
           </div>
@@ -174,28 +174,28 @@ const BoardView = {
             <!-- Dynamic Stress Test Results Banner -->
             <div class="stress-result-banner">
               <div class="stress-kpi">
-                <span class="stress-kpi-title">Stressed Day-30 Cash</span>
+                <span class="stress-kpi-title">30-Day Cash</span>
                 <span class="stress-kpi-val" style="color: ${stressResult.stressedCashDay30 < 4275000 ? 'var(--accent-rose)' : 'var(--accent-cyan)'};">
                   ${Formatter.money(stressResult.stressedCashDay30)}
                 </span>
               </div>
 
               <div class="stress-kpi">
-                <span class="stress-kpi-title">Stressed Liquidity Ratio</span>
+                <span class="stress-kpi-title">Liquidity Ratio</span>
                 <span class="stress-kpi-val" style="color: ${stressResult.stressedLiquidityRatio30d < 15.0 ? 'var(--accent-rose)' : 'var(--accent-emerald)'};">
                   ${stressResult.stressedLiquidityRatio30d.toFixed(1)}%
                 </span>
               </div>
 
               <div class="stress-kpi">
-                <span class="stress-kpi-title">Statutory Breach Point</span>
+                <span class="stress-kpi-title">Breach Point</span>
                 <span class="stress-kpi-val" style="color: ${stressResult.regulatoryBreachDay ? 'var(--accent-rose)' : 'var(--accent-emerald)'};">
                   ${stressResult.regulatoryBreachDay ? `Breach on Day ${stressResult.regulatoryBreachDay}` : 'No Breach in 90D'}
                 </span>
               </div>
 
               <div class="stress-kpi">
-                <span class="stress-kpi-title">Stressed Runway</span>
+                <span class="stress-kpi-title">Runway</span>
                 <span class="stress-kpi-val" style="color: ${stressResult.runwayDays < 60 ? 'var(--accent-amber)' : 'var(--accent-purple)'};">
                   ${stressResult.runwayDays > 365 ? '12+ Months' : `${stressResult.runwayDays} Days`}
                 </span>
@@ -210,7 +210,7 @@ const BoardView = {
         <div class="glass-panel col-12">
           <div class="panel-header">
             <div class="panel-title-wrap">
-              <span class="panel-title">System-Level Immutable Audit Trail (Layer 7)</span>
+              <span class="panel-title">Audit Trail</span>
             </div>
             <span class="badge badge-cyan">${state.auditTrail.length} Logged Events</span>
           </div>

@@ -30,8 +30,8 @@ const TellerDeskView = {
       <!-- View Header -->
       <div class="view-header-row">
         <div class="view-heading-group">
-          <h1>Teller Desk</h1>
-          <p>Counter cash operations, denomination validation, and member transaction posting</p>
+          <h1>Teller</h1>
+          <p>Cash posting and account activity</p>
         </div>
         <div class="view-actions-group" style="display: flex; gap: 0.5rem; align-items: center;">
           ${profile ? `
@@ -44,7 +44,7 @@ const TellerDeskView = {
           </button>
           ` : ''}
           <button id="btn-quick-transact" class="btn btn-emerald" style="padding: 0.5rem 1.25rem; font-weight: 700;">
-            ${profile ? 'Switch Client' : 'Find / Select Client'}
+            ${profile ? 'Switch Client' : 'Select Client'}
           </button>
         </div>
       </div>
@@ -55,7 +55,7 @@ const TellerDeskView = {
           <div class="glass-panel col-12">
             <div class="panel-header">
               <div class="panel-title-wrap">
-                <span class="panel-title">My Teller Session — Today's Postings</span>
+                <span class="panel-title">Today's Activity</span>
               </div>
               <span class="badge badge-indigo">Live Audit Stream</span>
             </div>
@@ -64,8 +64,8 @@ const TellerDeskView = {
             <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 3rem 1rem; gap: 0.75rem; text-align: center;">
               <span class="badge badge-muted" style="font-size: 0.75rem; letter-spacing: 0.05em; font-weight: 700; padding: 4px 10px;">COUNTER READY</span>
               <div>
-                <div style="font-size: 1.1rem; font-weight: 700; color: var(--text-main); margin-bottom: 0.25rem;">No Client Active</div>
-                <div style="font-size: 0.85rem; color: var(--text-muted);">Click <strong>Find / Select Client</strong> to load a member account and open the cash counter desk.</div>
+                <div style="font-size: 1.1rem; font-weight: 700; color: var(--text-main); margin-bottom: 0.25rem;">No client selected</div>
+                <div style="font-size: 0.85rem; color: var(--text-muted);">Choose a client to open the cash desk.</div>
               </div>
             </div>
 
@@ -162,7 +162,7 @@ const TellerDeskView = {
           <div style="display: flex; flex-direction: column; gap: 1rem;">
             <div class="stat-card cyan" style="margin:0;">
               <div class="stat-card-header">
-                <span class="stat-title">FOSA Savings Account</span>
+                <span class="stat-title">Savings</span>
                 <span class="badge badge-cyan" style="font-size: 0.65rem;">DEMAND</span>
               </div>
               <div class="stat-value" id="teller-savings-balance">${Formatter.money(profile.savingsBalance)}</div>
@@ -174,7 +174,7 @@ const TellerDeskView = {
 
             <div class="stat-card emerald" style="margin:0;">
               <div class="stat-card-header">
-                <span class="stat-title">Fixed Term Deposits</span>
+                <span class="stat-title">Fixed Deposits</span>
                 <span class="badge badge-emerald" style="font-size: 0.65rem;">TERM</span>
               </div>
               <div class="stat-value">${Formatter.money(profile.fixedDepositBalance)}</div>
@@ -186,7 +186,7 @@ const TellerDeskView = {
 
             <div class="stat-card purple" style="margin:0;">
               <div class="stat-card-header">
-                <span class="stat-title">SACCO Share Capital</span>
+                <span class="stat-title">Shares</span>
                 <span class="badge badge-purple" style="font-size: 0.65rem;">EQUITY</span>
               </div>
               <div class="stat-value">${Formatter.money(profile.shareCapital)}</div>
@@ -198,7 +198,7 @@ const TellerDeskView = {
 
             <div class="stat-card ${profile.totalLiabilities > 0 ? 'amber' : 'emerald'}" style="margin:0;">
               <div class="stat-card-header">
-                <span class="stat-title">Active Loan Liabilities</span>
+                <span class="stat-title">Loan Exposure</span>
                 <span class="badge ${profile.totalLiabilities > 0 ? 'badge-amber' : 'badge-emerald'}" style="font-size: 0.65rem;">
                   ${profile.activeLoans.length > 0 ? profile.activeLoans[0].npaClassification : 'Debt-Free'}
                 </span>
@@ -235,7 +235,7 @@ const TellerDeskView = {
 
             <!-- Initiate Cash Transaction Buttons -->
             <div style="background: var(--bg-surface-elevated); padding: 1rem; border-radius: var(--radius-md); border: 1px solid var(--border-subtle);">
-              <div style="font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.08em; font-weight: 700; margin-bottom: 0.75rem;">Initiate Counter Transaction</div>
+              <div style="font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.08em; font-weight: 700; margin-bottom: 0.75rem;">New Transaction</div>
               <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem;" id="tx-type-btn-group">
                 ${TX_TYPES.map(t => `
                   <button
@@ -254,11 +254,9 @@ const TellerDeskView = {
             <div class="glass-panel" id="transaction-workspace" style="display: none; padding: 1.25rem;">
               <div class="panel-header" style="margin-bottom: 1rem;">
                 <div class="panel-title-wrap">
-                  <span class="panel-title" id="tx-workspace-title">Cash Transaction Desk</span>
+                  <span class="panel-title" id="tx-workspace-title">Cash Desk</span>
                 </div>
-                <span class="badge badge-rose">Exact Denomination Match Required</span>
-              </div>
-
+                <span class="badge badge-rose">Match cash count</span>
               <div style="display: flex; flex-direction: column; gap: 1rem;">
 
                 <!-- Transaction Form -->
@@ -293,12 +291,12 @@ const TellerDeskView = {
 
                 <!-- Denomination Counter -->
                 <div style="background: var(--bg-surface); padding: 1rem; border-radius: var(--radius-md); border: 1px solid var(--border-subtle);">
-                  <div style="font-size: 0.8rem; font-weight: 700; color: #fff; margin-bottom: 0.75rem;">Physical Cash Denomination Count</div>
+                  <div style="font-size: 0.8rem; font-weight: 700; color: #fff; margin-bottom: 0.75rem;">Cash Count</div>
                   <div class="denomination-grid" id="denomination-grid-container" style="grid-template-columns: 1fr 1fr; gap: 0.6rem;">
                     <!-- Populated by JS -->
                   </div>
                   <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 1rem; padding-top: 0.75rem; border-top: 1px dashed var(--border-subtle);">
-                    <span style="font-size: 0.85rem; font-weight: 600; color: var(--text-muted);">Calculated Physical Total:</span>
+                    <span style="font-size: 0.85rem; font-weight: 600; color: var(--text-muted);">Physical Total:</span>
                     <span id="calculated-tx-total" style="font-family: var(--font-mono); font-size: 1.4rem; font-weight: 800; color: var(--accent-cyan);">0.00</span>
                   </div>
                 </div>
@@ -306,10 +304,10 @@ const TellerDeskView = {
                 <!-- Post Button + Validation Message -->
                 <div>
                   <button id="btn-post-secure-tx" class="btn btn-emerald btn-lg" style="width: 100%; opacity: 0.5; cursor: not-allowed;" disabled>
-                    Authorize &amp; Post Transaction
+                    Post Transaction
                   </button>
                   <div id="tx-validation-msg" style="font-size: 0.78rem; color: var(--accent-rose); display: block; margin-top: 0.5rem; text-align: center; padding: 0.4rem 0;">
-                    Calculated cash must exactly match Target Amount.
+                    Cash total must match the target amount.
                   </div>
                 </div>
               </div>
@@ -322,7 +320,7 @@ const TellerDeskView = {
         <div style="width: min(560px, 92vw); background: linear-gradient(180deg, #ffffff, #f8fafc); border: 1px solid rgba(148, 163, 184, 0.18); border-radius: 18px; box-shadow: 0 28px 44px rgba(15, 23, 42, 0.18); overflow: hidden;">
           <div style="padding: 1.1rem 1.2rem; border-bottom: 1px solid rgba(148, 163, 184, 0.18); background: linear-gradient(180deg, rgba(15, 23, 42, 0.96), rgba(15, 23, 42, 0.98));">
             <div style="font-size: 0.72rem; font-weight: 800; color: #cbd5e1; text-transform: uppercase; letter-spacing: 0.1em;">Transaction Confirmation</div>
-            <div style="font-size: 1.05rem; font-weight: 800; color: #f8fafc; margin-top: 0.2rem;">Review before posting</div>
+            <div style="font-size: 1.05rem; font-weight: 800; color: #f8fafc; margin-top: 0.2rem;">Confirm posting</div>
           </div>
 
           <div style="padding: 1.2rem; display: flex; flex-direction: column; gap: 0.9rem;">
@@ -336,12 +334,12 @@ const TellerDeskView = {
             </div>
 
             <div style="display: flex; align-items: center; gap: 0.55rem; padding: 0.8rem 0.9rem; border-radius: 12px; background: rgba(239, 68, 68, 0.05); border: 1px solid rgba(239, 68, 68, 0.18); color: var(--accent-rose); font-size: 0.8rem; font-weight: 700;">
-              ⚠ This action will post the transaction immediately after confirmation.
+              ⚠ Posting occurs immediately after confirmation.
             </div>
 
             <div style="display: flex; justify-content: flex-end; gap: 0.7rem; margin-top: 0.2rem;">
               <button id="btn-cancel-tx-post" class="btn btn-secondary" type="button">Cancel</button>
-              <button id="btn-confirm-tx-post" class="btn btn-emerald" type="button">Confirm &amp; Post</button>
+              <button id="btn-confirm-tx-post" class="btn btn-emerald" type="button">Confirm</button>
             </div>
           </div>
         </div>

@@ -16,10 +16,10 @@ const UserManagementView = {
           <div class="modal-header">
             <div>
               <div class="modal-title">
-                User Administration &amp; Task Separation (RBAC)
+                User Access
               </div>
               <span style="font-size: 0.75rem; color: var(--text-dim);">
-                Active Operator: <strong>${currentUser.name}</strong> (${currentUser.role} • Limit: ${currentUser.singleApprovalLimit > 0 ? Formatter.money(currentUser.singleApprovalLimit) : 'No Approval Cap'})
+                Active: <strong>${currentUser.name}</strong> (${currentUser.role} • ${currentUser.singleApprovalLimit > 0 ? Formatter.money(currentUser.singleApprovalLimit) : 'No cap'})
               </span>
             </div>
             <button class="modal-close" id="btn-close-user-modal" title="Close modal" style="font-family: var(--font-mono); font-size: 0.85rem; font-weight: 700; padding: 0.3rem 0.6rem; border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); background: var(--bg-surface); color: var(--text-muted); cursor: pointer;">
@@ -30,16 +30,16 @@ const UserManagementView = {
           <!-- Navigation Tabs -->
           <div style="display: flex; align-items: center; border-bottom: 1px solid var(--border-subtle); padding: 0 1.5rem; background: #f8fafc; overflow-x: auto; gap: 0.5rem;">
             <button class="input-tab-btn ${this.activeTab === 'directory' ? 'active' : ''}" data-tab="directory">
-              1. System Operator Directory (${state.users.length})
+              1. Operators (${state.users.length})
             </button>
             <button class="input-tab-btn ${this.activeTab === 'matrix' ? 'active' : ''}" data-tab="matrix">
-              2. Task & Permissions Matrix (SoD)
+              2. Permissions
             </button>
             <button class="input-tab-btn ${this.activeTab === 'adduser' ? 'active' : ''}" data-tab="adduser">
-              3. + Add New Operator
+              3. + Add User
             </button>
             <button class="input-tab-btn ${this.activeTab === 'danger' ? 'active' : ''}" data-tab="danger" style="color: var(--accent-rose);">
-              4. Danger Zone
+              4. Reset
             </button>
           </div>
 

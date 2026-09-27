@@ -27,19 +27,17 @@ const UserManagementEngine = {
     if (user && user.status === 'Active') {
       const roles = user.roles ? user.roles.map(rId => this.getRoleById(state, rId)).filter(Boolean) : [];
       const firstRole = roles.length > 0 ? roles[0] : null;
+      const preferredRoleCategory = roles.some(r => r.category === 'teller')
+        ? 'counter-ops'
+        : roles.some(r => r.category === 'front-office')
+          ? 'front-office'
+          : (firstRole ? firstRole.category : null);
       
       state.isAuthenticated = true;
       state.currentUserId = user.id;
-      state.currentRole = firstRole ? firstRole.category : null;
+      state.currentRole = preferredRoleCategory;
       state.selectedBranchId = user.branchId;
-      
-      // If user is a member, set their selectedMemberId
-      if (roles.some(r => r.category === 'member')) {
-        const member = state.members.find(m => m.email.toLowerCase() === email.toLowerCase());
-        if (member) {
-          state.selectedMemberId = member.id;
-        }
-      }
+      state.selectedMemberId = null;
       return true;
     }
     return false;
@@ -155,6 +153,7 @@ const UserManagementEngine = {
       activeUsers: activeUsers.length,
       mfaAdoptionPct: users.length > 0 ? (mfaEnabledCount / users.length) * 100 : 0,
       roleDistribution: {
+        'front-office': this.getUsersByRole(state, 'front-office').length,
         teller: this.getUsersByRole(state, 'teller').length,
         credit: this.getUsersByRole(state, 'credit').length,
         treasury: this.getUsersByRole(state, 'treasury').length,

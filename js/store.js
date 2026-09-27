@@ -64,15 +64,16 @@ class FinageStore {
 
       // --- Centralized Role Dictionary (RBAC) ---
       roles: [
-        { id: 'ROLE-ADMIN', name: 'System Administrator', category: 'board', permissions: ['READ_ALL_MODULES', 'MANAGE_USERS', 'POLICY_THRESHOLD_CONFIG', 'BOARD_ESCALATION_APPROVE', 'GOVERNANCE_OVERVIEW'] },
-        { id: 'ROLE-BRANCH-MGR', name: 'Branch Manager', category: 'teller', permissions: ['POST_COUNTER_TX', 'VAULT_RECONCILE', 'APPROVE_BRANCH_LOAN_TIER1', 'TELLER_LIMIT_OVERRIDE'] },
-        { id: 'ROLE-TELLER', name: 'Branch Teller (FOSA)', category: 'teller', permissions: ['POST_COUNTER_TX', 'VIEW_MEMBER_BALANCE'] },
+        { id: 'ROLE-ADMIN', name: 'System Administrator', category: 'board', permissions: ['READ_ALL_MODULES', 'MANAGE_USERS', 'REPORTS_ACCESS', 'POLICY_THRESHOLD_CONFIG', 'BOARD_ESCALATION_APPROVE', 'GOVERNANCE_OVERVIEW'] },
+        { id: 'ROLE-BRANCH-MGR', name: 'FOSA Supervisor', category: 'front-office', permissions: ['POST_COUNTER_TX', 'VAULT_RECONCILE', 'APPROVE_BRANCH_LOAN_TIER1', 'TELLER_LIMIT_OVERRIDE', 'AUDIT_TELLER_ACTIVITY', 'REPORTS_ACCESS'] },
+        { id: 'ROLE-FRONT-OFFICE', name: 'FOSA Supervisor', category: 'front-office', permissions: ['VIEW_MEMBER_BALANCE', 'AUDIT_TELLER_ACTIVITY', 'APPROVE_BRANCH_LOAN_TIER1', 'TELLER_LIMIT_OVERRIDE', 'REPORTS_ACCESS'] },
+        { id: 'ROLE-TELLER', name: 'Teller Desk Officer', category: 'teller', permissions: ['POST_COUNTER_TX', 'VIEW_MEMBER_BALANCE'] },
         { id: 'ROLE-CREDIT-MAKER', name: 'Credit Origination Officer (Maker)', category: 'credit', permissions: ['ORIGINATE_LOAN_APP', 'KYC_RISK_SCORING', 'VIEW_PAR_METRICS'] },
         { id: 'ROLE-CREDIT-CHECKER', name: 'Head of Credit & Checker', category: 'credit', permissions: ['APPROVE_CREDIT_FACILITY', 'PACING_RELEASE_AUTHORIZE', 'OVERRIDE_NPA_PROVISION'] },
-        { id: 'ROLE-TREASURY', name: 'Treasury & Liquidity Officer', category: 'treasury', permissions: ['EXECUTE_DFI_DRAWDOWN', 'RECONCILE_BANKS', 'PLACE_TBILLS', 'MODIFY_GL_JOURNAL', 'RUN_PARALLEL_EOD'] },
-        { id: 'ROLE-AUDITOR', name: 'Risk Lead & Internal Auditor', category: 'board', permissions: ['VIEW_AUDIT_LOGS', 'EXPORT_SASRA_RETURNS', 'MONITOR_AML_CFT', 'READ_ALL_MODULES'] },
-        { id: 'ROLE-BOARD-CHAIR', name: 'Board Chairman & ALCO Lead', category: 'board', permissions: ['GOVERNANCE_OVERVIEW', 'STRESS_TEST_SIMULATION', 'BOARD_ESCALATION_APPROVE', 'POLICY_THRESHOLD_CONFIG'] },
-        { id: 'ROLE-MEMBER', name: 'Member Self-Service', category: 'member', permissions: ['VIEW_OWN_ACCOUNTS', 'APPLY_INSTANT_LOAN', 'DIGITAL_GUARANTOR_APPROVE', 'MPESA_MOBILE_DEPOSIT'] }
+        { id: 'ROLE-TREASURY', name: 'Treasury & Liquidity Officer', category: 'treasury', permissions: ['EXECUTE_DFI_DRAWDOWN', 'RECONCILE_BANKS', 'PLACE_TBILLS', 'MODIFY_GL_JOURNAL', 'RUN_PARALLEL_EOD', 'REPORTS_ACCESS'] },
+        { id: 'ROLE-AUDITOR', name: 'Risk Lead & Internal Auditor', category: 'board', permissions: ['VIEW_AUDIT_LOGS', 'EXPORT_SASRA_RETURNS', 'MONITOR_AML_CFT', 'READ_ALL_MODULES', 'REPORTS_ACCESS'] },
+        { id: 'ROLE-BOARD-CHAIR', name: 'Board Chairman & ALCO Lead', category: 'board', permissions: ['GOVERNANCE_OVERVIEW', 'STRESS_TEST_SIMULATION', 'BOARD_ESCALATION_APPROVE', 'POLICY_THRESHOLD_CONFIG', 'REPORTS_ACCESS'] },
+        { id: 'ROLE-MEMBER', name: 'Teller Desk', category: 'teller', permissions: ['POST_COUNTER_TX', 'VIEW_MEMBER_BALANCE', 'HANDLE_MEMBER_DEPOSITS'] }
       ],
 
       // --- Institutional Users & Access Control Directory (RBAC) ---
@@ -479,7 +480,7 @@ class FinageStore {
           title: 'Solar SACCO Green Expansion - Eldo Clean Energy',
           amount: 150000,
           makerUserId: 'USR-901',
-          requestedBy: 'Member Self-Service Portal',
+          requestedBy: 'Teller Desk Portal',
           currentStep: 'Guarantor Digital Confirmation',
           approverRole: 'Credit/Loans',
           makerCheckerStatus: 'Awaiting Guarantor 2 Sign-off',

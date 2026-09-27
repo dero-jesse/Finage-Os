@@ -163,7 +163,7 @@ const UserManagementView = {
                       ${(u.roles || []).map(rId => {
                         const r = state.roles.find(rl => rl.id === rId);
                         if (!r) return '';
-                        return `<span class="badge ${r.category === 'treasury' ? 'badge-cyan' : (r.category === 'credit' ? 'badge-purple' : (r.category === 'teller' ? 'badge-emerald' : 'badge-orange'))}" style="align-self: flex-start;">
+                        return `<span class="badge ${r.category === 'treasury' ? 'badge-cyan' : (r.category === 'credit' ? 'badge-purple' : (r.category === 'teller' ? 'badge-emerald' : (r.category === 'front-office' ? 'badge-aqua' : 'badge-orange')))}" style="align-self: flex-start;">
                           ${r.name}
                         </span>`;
                       }).join('')}
@@ -196,8 +196,8 @@ const UserManagementView = {
   // --- TAB 2: Task Separation & Permissions Matrix ---
   renderMatrixTab(state) {
     const tasks = [
-      { name: 'Member Counter Deposits & Cash Inflow', teller: 'YES', mgr: 'YES', creditMaker: 'NO', creditChecker: 'NO', treasury: 'NO', audit: 'VIEW', board: 'VIEW' },
-      { name: 'Teller Limit Override & Cash Vault Reconcile', teller: 'NO', mgr: 'YES', creditMaker: 'NO', creditChecker: 'NO', treasury: 'VIEW', audit: 'VIEW', board: 'VIEW' },
+      { name: 'Member Counter Deposits & Cash Inflow', teller: 'YES', frontOffice: 'YES', mgr: 'YES', creditMaker: 'NO', creditChecker: 'NO', treasury: 'NO', audit: 'VIEW', board: 'VIEW' },
+      { name: 'Teller Limit Override & Cash Vault Reconcile', teller: 'NO', frontOffice: 'YES', mgr: 'YES', creditMaker: 'NO', creditChecker: 'NO', treasury: 'VIEW', audit: 'VIEW', board: 'VIEW' },
       { name: 'Loan Origination & KYC Risk Scoring (Maker)', teller: 'NO', mgr: 'YES', creditMaker: 'YES', creditChecker: 'NO', treasury: 'NO', audit: 'VIEW', board: 'VIEW' },
       { name: 'Credit Committee Approval & Pacing Release (Checker)', teller: 'NO', mgr: 'TIER-1', creditMaker: 'NO', creditChecker: 'YES', treasury: 'NO', audit: 'VIEW', board: 'ESCALATION' },
       { name: 'DFI Facility Drawdowns & T-Bill Placements', teller: 'NO', mgr: 'NO', creditMaker: 'NO', creditChecker: 'NO', treasury: 'YES', audit: 'VIEW', board: 'POLICY' },
@@ -230,8 +230,8 @@ const UserManagementView = {
             <thead>
               <tr>
                 <th>Operational Task / Function</th>
-                <th>Branch Teller</th>
-                <th>Branch Mgr</th>
+                <th>Teller</th>
+                <th>FOSA</th>
                 <th>Credit Maker</th>
                 <th>Credit Checker</th>
                 <th>Treasury</th>
@@ -244,7 +244,7 @@ const UserManagementView = {
                 <tr>
                   <td class="cell-bold" style="font-size: 0.775rem;">${t.name}</td>
                   <td>${getStatusTag(t.teller)}</td>
-                  <td>${getStatusTag(t.mgr)}</td>
+                  <td>${getStatusTag(t.frontOffice ?? t.mgr)}</td>
                   <td>${getStatusTag(t.creditMaker)}</td>
                   <td>${getStatusTag(t.creditChecker)}</td>
                   <td>${getStatusTag(t.treasury)}</td>

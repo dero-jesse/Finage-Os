@@ -10,6 +10,7 @@ const App = {
     this.roleButtons = document.querySelectorAll('.role-nav .role-btn');
     this.modalMount = document.getElementById('input-modal-mount');
     this.userMgmtMount = document.getElementById('user-mgmt-mount');
+    this.reportsMount = document.getElementById('reports-modal-mount');
     this.aiWidgetMount = document.getElementById('ai-widget-mount');
     this.clientModalMount = document.getElementById('client-selection-modal-mount');
     this.toastShelf = document.getElementById('toast-shelf'); // required by showToast
@@ -52,10 +53,14 @@ const App = {
   },
 
   render(state) {
+    if (this.reportsMount && this.reportsMount.innerHTML.trim()) {
+      ReportsView.renderModal(this.reportsMount, state);
+    }
+
     // 0. Update Brand Info dynamically
     const brandTitle = document.getElementById('brand-title-display');
     if (brandTitle) {
-      brandTitle.innerHTML = `${state.institution.name.split(' ')[0].toUpperCase()} OS <span class="brand-tag">v3 Institutional</span>`;
+      brandTitle.innerHTML = `${state.institution.name.split(' ')[0].toUpperCase()} OS`;
     }
     const brandSub = document.getElementById('brand-subtitle-display');
     if (brandSub) {
@@ -69,9 +74,10 @@ const App = {
     
     this.roleButtons.forEach(btn => {
       const btnRole = btn.dataset.role;
+      const normalizedRole = btnRole === 'counter-ops' ? 'teller' : btnRole;
       
       // Enforce RBAC Visibility
-      if (canReadAll || currentRoleObjs.some(r => r.category === btnRole)) {
+      if (canReadAll || currentRoleObjs.some(r => r.category === normalizedRole)) {
         btn.style.display = 'flex'; // Show authorized tabs
       } else {
         btn.style.display = 'none'; // Hide unauthorized tabs
@@ -95,6 +101,16 @@ const App = {
       }
     }
 
+    const btnReports = document.getElementById('btn-open-reports');
+    if (btnReports) {
+      const canOpenReports = currentRoleObjs.some(r =>
+        r.permissions.includes('READ_ALL_MODULES') ||
+        r.permissions.includes('MANAGE_USERS') ||
+        r.permissions.includes('REPORTS_ACCESS')
+      );
+      btnReports.style.display = canOpenReports ? 'flex' : 'none';
+    }
+
     // 3. Update Active User Badge
     this.updateUserBadge(state);
 
@@ -116,11 +132,16 @@ const App = {
         if (this.tickerBar) this.tickerBar.style.display = 'flex';
         
         switch (state.currentRole) {
-          case 'member':
-            MemberPortalView.render(this.viewport, state);
+          case 'front-office':
+            BranchView.render(this.viewport, state);
             break;
           case 'teller':
-            BranchView.render(this.viewport, state);
+          case 'counter-ops':
+            if (typeof TellerDeskView !== 'undefined') {
+              TellerDeskView.render(this.viewport, state);
+            } else {
+              BranchView.render(this.viewport, state);
+            }
             break;
           case 'credit':
             CreditView.render(this.viewport, state);
@@ -245,6 +266,26 @@ const App = {
     if (btnOpenUserMgmt) {
       btnOpenUserMgmt.addEventListener('click', () => {
         UserManagementView.open();
+      });
+    }
+
+    // Open Admin Reports Portal
+    const btnOpenReports = document.getElementById('btn-open-reports');
+    if (btnOpenReports) {
+      btnOpenReports.addEventListener('click', () => {
+        const currentUser = store.getCurrentUser();
+        const currentRoleObjs = currentUser ? UserManagementEngine.getUserRoles(store.state, currentUser.id) : [];
+        const canOpenReports = currentRoleObjs.some(r =>
+          r.permissions.includes('READ_ALL_MODULES') ||
+          r.permissions.includes('MANAGE_USERS') ||
+          r.permissions.includes('REPORTS_ACCESS')
+        );
+
+        if (canOpenReports) {
+          ReportsView.open();
+        } else {
+          App.showToast('Unauthorized: reporting access is limited to admin and oversight roles.', 'error');
+        }
       });
     }
 

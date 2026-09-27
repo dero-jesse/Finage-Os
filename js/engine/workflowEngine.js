@@ -14,7 +14,8 @@ const WorkflowEngine = {
     return tasks.filter(t => {
       if (roleFilter === 'treasury') return t.approverRole.toLowerCase().includes('treasury') || t.approverRole.toLowerCase().includes('finance');
       if (roleFilter === 'credit') return t.approverRole.toLowerCase().includes('credit');
-      if (roleFilter === 'teller') return t.approverRole.toLowerCase().includes('branch') || t.approverRole.toLowerCase().includes('teller');
+      if (roleFilter === 'front-office') return t.approverRole.toLowerCase().includes('front office') || t.approverRole.toLowerCase().includes('branch') || t.approverRole.toLowerCase().includes('teller') || t.approverRole.toLowerCase().includes('audit');
+      if (roleFilter === 'teller') return t.approverRole.toLowerCase().includes('teller') || t.approverRole.toLowerCase().includes('cash');
       if (roleFilter === 'board') return true; // Board can view all governance workflows
       return true;
     });

@@ -22,6 +22,14 @@
   <link rel="stylesheet" href="css/main.css">
   <link rel="stylesheet" href="css/components.css">
   <link rel="stylesheet" href="css/views.css">
+
+  <style>
+    :root {
+      --shell-bg: #eef4ff;
+      --shell-surface: rgba(255, 255, 255, 0.8);
+      --shell-border: rgba(148, 163, 184, 0.22);
+    }
+  </style>
 </head>
 
 <body>
@@ -39,13 +47,14 @@
 
       <!-- Role Access Switcher (Layer 9 Multi-Persona) -->
       <nav class="role-nav" aria-label="Role View Switcher">
-        <button class="role-btn" data-role="member" title="Member Self-Service, 360 accounts, instant loan application">
+        <button class="role-btn" data-role="counter-ops"
+          title="Teller counter operations, member cash desk, deposits, withdrawals, and teller desk activity">
           Teller
         </button>
 
-        <button class="role-btn" data-role="teller"
-          title="FOSA branch cash entry, till count reconciliation, counter desk">
-          Front Office
+        <button class="role-btn" data-role="front-office"
+          title="FOSA branch supervision, teller audit, and counter oversight">
+          FOSA
         </button>
 
         <button class="role-btn active" data-role="treasury"
@@ -91,6 +100,10 @@
           Users
         </button>
 
+        <button id="btn-open-reports" class="header-btn" title="Admin reporting and export generation center">
+          Reports
+        </button>
+
         <button id="btn-logout" class="header-btn" title="Sign Out">
           Sign Out
         </button>
@@ -118,6 +131,7 @@
     <!-- Modals & Widgets Layer -->
     <div id="input-modal-mount"></div>
     <div id="user-mgmt-mount"></div>
+    <div id="reports-modal-mount"></div>
     <div id="ai-widget-mount"></div>
     <div id="client-selection-modal-mount"></div>
 
@@ -153,6 +167,7 @@
   <script src="js/views/loginView.js"></script>
   <script src="js/views/inputModalView.js"></script>
   <script src="js/views/userManagementView.js"></script>
+  <script src="js/views/reportsView.js"></script>
   <script src="js/views/aiWidgetView.js"></script>
   <script src="js/views/clientSelectionModalView.js"></script>
   <script src="js/views/memberPortalView.js"></script>
@@ -163,6 +178,7 @@
 
   <!-- Application Bootstrap -->
   <script src="js/app.js"></script>
+
 </body>
 
 </html>

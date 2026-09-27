@@ -46,16 +46,13 @@ const LoginView = {
                 Treasury Manager
               </button>
               <button class="btn btn-secondary btn-sm btn-quick-login" data-email="faith.mwangi@finage.co.ke" style="font-size: 0.68rem; justify-content: flex-start; text-align: left;">
-                Branch Manager
+                FOSA
               </button>
               <button class="btn btn-secondary btn-sm btn-quick-login" data-email="david.ochieng@finage.co.ke" style="font-size: 0.68rem; justify-content: flex-start; text-align: left;">
-                Teller (FOSA)
+                Teller
               </button>
               <button class="btn btn-secondary btn-sm btn-quick-login" data-email="brian.komen@finage.co.ke" style="font-size: 0.68rem; justify-content: flex-start; text-align: left;">
                 Credit Checker
-              </button>
-              <button class="btn btn-secondary btn-sm btn-quick-login" data-email="sarah.kamau@barakafarms.co.ke" style="font-size: 0.68rem; justify-content: flex-start; text-align: left;">
-                Retail Member
               </button>
             </div>
           </div>

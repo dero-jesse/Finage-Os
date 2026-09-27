@@ -7,7 +7,7 @@
  *   - Till float monitoring (read-only — cash posting is Teller's authority)
  *   - EOD vault reconciliation & cash sheet submission
  *
- * Cash transaction authority: TELLER ONLY (memberPortalView.js)
+ * Cash transaction authority: Teller Desk only (TellerDeskView)
  */
 
 const BranchView = {
@@ -52,8 +52,8 @@ const BranchView = {
       <!-- View Header -->
       <div class="view-header-row">
         <div class="view-heading-group">
-          <h1>Front Office — Branch Manager</h1>
-          <p>Member onboarding, approval authority for transactions above teller limit &amp; EOD reconciliation</p>
+          <h1>FOSA — Branch Oversight</h1>
+          <p>Branch supervision, teller audit, and approval of transactions above teller limit</p>
         </div>
         <div class="view-actions-group" style="display: flex; gap: 0.5rem; align-items: center;">
           <div class="form-group" style="margin: 0; min-width: 240px;">
@@ -190,7 +190,7 @@ const BranchView = {
           <div style="background: var(--accent-green-light); border: 1px solid var(--accent-green); padding: 0.75rem 1rem; margin-bottom: 1.5rem; display: flex; align-items: flex-start; gap: 0.75rem;">
             <div style="font-size: 0.8rem; color: var(--text-muted); line-height: 1.5; flex: 1;">
               <strong style="color: var(--accent-green-dark); text-transform: uppercase;">[NOTICE] Cash Transaction Authority — Teller Only.</strong>
-              Counter deposits, withdrawals, and repayments are posted at the Teller Operations Terminal.
+              Counter deposits, withdrawals, and repayments are posted at the Teller Desk.
               Transactions <strong>above the teller cash limit</strong> are held and routed here for approval.
               <div style="margin-top: 0.6rem; display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
                 <span style="font-size: 0.78rem;">Current teller limit for <strong>${currentBranch.name}:</strong></span>

@@ -1,6 +1,6 @@
 /**
- * Finage OS v3 - Layer 9: Teller Operations Terminal (FOSA Counter Desk)
- * Secure FOSA teller counter posting with strict physical cash denomination validation.
+ * Finage OS v3 - Layer 9: Teller Desk (FOSA Counter Desk)
+ * Secure teller counter posting with strict physical cash denomination validation.
  */
 
 const CURRENCIES = {
@@ -18,7 +18,7 @@ const TX_TYPES = [
   { type: 'Loan Disbursement',label: 'Loan Disburse', icon: '→', color: 'btn-amber',   debitGL: '1200', creditGL: '1010' },
 ];
 
-const MemberPortalView = {
+const TellerDeskView = {
   render(container, state) {
     const memberId = state.selectedMemberId;
     let profile = null;
@@ -30,8 +30,8 @@ const MemberPortalView = {
       <!-- View Header -->
       <div class="view-header-row">
         <div class="view-heading-group">
-          <h1>Teller Operations Terminal</h1>
-          <p>FOSA counter desk — strict physical cash denomination validation before every post</p>
+          <h1>Teller Desk</h1>
+          <p>Counter cash operations, denomination validation, and member transaction posting</p>
         </div>
         <div class="view-actions-group" style="display: flex; gap: 0.5rem; align-items: center;">
           ${profile ? `
@@ -568,4 +568,6 @@ const MemberPortalView = {
   }
 };
 
-window.MemberPortalView = MemberPortalView;
+window.TellerDeskView = TellerDeskView;
+window.MemberPortalView = TellerDeskView;
+window.CounterOperationsView = TellerDeskView;

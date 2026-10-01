@@ -196,7 +196,7 @@ const UserManagementView = {
   // --- TAB 2: Task Separation & Permissions Matrix ---
   renderMatrixTab(state) {
     const tasks = [
-      { name: 'Member Counter Deposits & Cash Inflow', teller: 'YES', frontOffice: 'YES', mgr: 'YES', creditMaker: 'NO', creditChecker: 'NO', treasury: 'NO', audit: 'VIEW', board: 'VIEW' },
+      { name: 'Member Counter Deposits & Cash Inflow', teller: 'YES', frontOffice: 'NO', mgr: 'NO', creditMaker: 'NO', creditChecker: 'NO', treasury: 'NO', audit: 'VIEW', board: 'VIEW' },
       { name: 'Teller Limit Override & Cash Vault Reconcile', teller: 'NO', frontOffice: 'YES', mgr: 'YES', creditMaker: 'NO', creditChecker: 'NO', treasury: 'VIEW', audit: 'VIEW', board: 'VIEW' },
       { name: 'Loan Origination & KYC Risk Scoring (Maker)', teller: 'NO', mgr: 'YES', creditMaker: 'YES', creditChecker: 'NO', treasury: 'NO', audit: 'VIEW', board: 'VIEW' },
       { name: 'Credit Committee Approval & Pacing Release (Checker)', teller: 'NO', mgr: 'TIER-1', creditMaker: 'NO', creditChecker: 'YES', treasury: 'NO', audit: 'VIEW', board: 'ESCALATION' },
@@ -275,11 +275,23 @@ const UserManagementView = {
           </div>
         </div>
 
+        <!-- Password row (used to create Supabase Auth account) -->
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+          <div class="form-group" style="margin: 0;">
+            <label class="form-label">Initial Login Password ${window.supabase ? '<span class="badge badge-emerald" style="font-size:0.6rem;">Supabase Auth</span>' : '<span class="badge badge-amber" style="font-size:0.6rem;">Offline — not stored</span>'}</label>
+            <input type="password" id="inp-u-password" class="form-control" placeholder="Min 8 characters" autocomplete="new-password" ${window.supabase ? 'required' : ''}>
+          </div>
+          <div class="form-group" style="margin: 0;">
+            <label class="form-label">Confirm Password</label>
+            <input type="password" id="inp-u-password-confirm" class="form-control" placeholder="Re-enter password" autocomplete="new-password">
+          </div>
+        </div>
+
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
           <div class="form-group" style="margin: 0;">
             <label class="form-label">Assigned Institutional Roles (Multi-select)</label>
             <select id="inp-u-role" class="form-control" multiple size="4">
-              ${state.roles.map(r => `<option value="${r.id}">${r.name}</option>`).join('')}
+              ${state.roles.filter(r => r.category !== 'member').map(r => `<option value="${r.id}">${r.name}</option>`).join('')}
             </select>
             <small style="color: var(--text-dim); display: block; margin-top: 4px;">Hold Ctrl/Cmd to select multiple roles.</small>
           </div>
@@ -304,9 +316,12 @@ const UserManagementView = {
           </div>
         </div>
 
+        <!-- Feedback slot -->
+        <div id="adduser-error" style="display:none; color: var(--accent-rose); font-size: 0.78rem; font-weight: 600; padding: 0.5rem 0.75rem; background: rgba(220,38,38,0.06); border-radius: 6px; border: 1px solid rgba(220,38,38,0.25);"></div>
+
         <div style="display: flex; justify-content: flex-end; gap: 0.75rem; margin-top: 0.5rem;">
           <button type="button" class="btn btn-secondary btn-close-user-modal">Cancel</button>
-          <button type="submit" class="btn btn-primary">
+          <button type="submit" id="btn-create-user" class="btn btn-primary">
             Create System User Account
           </button>
         </div>
@@ -349,16 +364,43 @@ const UserManagementView = {
     // Add user form submit
     const addUserForm = container.querySelector('#form-add-user');
     if (addUserForm) {
-      addUserForm.addEventListener('submit', (e) => {
+      addUserForm.addEventListener('submit', async (e) => {
         e.preventDefault();
-        const name = container.querySelector('#inp-u-name')?.value;
-        const email = container.querySelector('#inp-u-email')?.value;
+        const name = container.querySelector('#inp-u-name')?.value.trim();
+        const email = container.querySelector('#inp-u-email')?.value.trim();
+        const password = container.querySelector('#inp-u-password')?.value || '';
+        const passwordConfirm = container.querySelector('#inp-u-password-confirm')?.value || '';
         const roleSelect = container.querySelector('#inp-u-role');
         const roles = Array.from(roleSelect.selectedOptions).map(opt => opt.value);
         const branchParts = container.querySelector('#inp-u-branch')?.value.split('|');
         const singleLimit = Number(container.querySelector('#inp-u-limit')?.value) || 0;
         const dailyLimit = Number(container.querySelector('#inp-u-daily')?.value) || 0;
+        const errEl = container.querySelector('#adduser-error');
+        const submitBtn = container.querySelector('#btn-create-user');
 
+        const showErr = (msg) => { if (errEl) { errEl.textContent = msg; errEl.style.display = 'block'; } };
+        const clearErr = () => { if (errEl) errEl.style.display = 'none'; };
+        clearErr();
+
+        // Validate passwords when Supabase is live
+        if (window.supabase) {
+          if (password.length < 8) { showErr('Password must be at least 8 characters.'); return; }
+          if (password !== passwordConfirm) { showErr('Passwords do not match.'); return; }
+        }
+
+        if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Creating…'; }
+
+        // Step 1: Create Supabase Auth account (if live)
+        if (window.supabase && password) {
+          const authResult = await UserManagementEngine.createAuthUser(email, password);
+          if (!authResult.success) {
+            showErr('Auth account creation failed: ' + authResult.error);
+            if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Create System User Account'; }
+            return;
+          }
+        }
+
+        // Step 2: Add to the system user directory
         const newId = store.addUser({
           name,
           email,
@@ -369,8 +411,9 @@ const UserManagementView = {
           dailyApprovalLimit: dailyLimit
         });
         
-        App.showToast(`Operator ${name} created (${newId}) with ${roles.length} roles.`, 'success');
+        App.showToast(`Operator ${name} created (${newId}) with ${roles.length} role(s).${window.supabase ? ' Auth account sent confirmation email.' : ''}`, 'success');
         modal.classList.remove('active');
+        if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Create System User Account'; }
       });
     }
 

@@ -65,15 +65,15 @@ class FinageStore {
       // --- Centralized Role Dictionary (RBAC) ---
       roles: [
         { id: 'ROLE-ADMIN', name: 'System Administrator', category: 'board', permissions: ['READ_ALL_MODULES', 'MANAGE_USERS', 'REPORTS_ACCESS', 'POLICY_THRESHOLD_CONFIG', 'BOARD_ESCALATION_APPROVE', 'GOVERNANCE_OVERVIEW'] },
-        { id: 'ROLE-BRANCH-MGR', name: 'FOSA Supervisor', category: 'front-office', permissions: ['POST_COUNTER_TX', 'VAULT_RECONCILE', 'APPROVE_BRANCH_LOAN_TIER1', 'TELLER_LIMIT_OVERRIDE', 'AUDIT_TELLER_ACTIVITY', 'REPORTS_ACCESS'] },
-        { id: 'ROLE-FRONT-OFFICE', name: 'FOSA Supervisor', category: 'front-office', permissions: ['VIEW_MEMBER_BALANCE', 'AUDIT_TELLER_ACTIVITY', 'APPROVE_BRANCH_LOAN_TIER1', 'TELLER_LIMIT_OVERRIDE', 'REPORTS_ACCESS'] },
-        { id: 'ROLE-TELLER', name: 'Teller Desk Officer', category: 'teller', permissions: ['POST_COUNTER_TX', 'VIEW_MEMBER_BALANCE'] },
+        { id: 'ROLE-BRANCH-MGR', name: 'Branch Manager / FOSA Supervisor', category: 'front-office', permissions: ['VAULT_RECONCILE', 'APPROVE_BRANCH_LOAN_TIER1', 'TELLER_LIMIT_OVERRIDE', 'AUDIT_TELLER_ACTIVITY', 'REPORTS_ACCESS'] },
+        { id: 'ROLE-FRONT-OFFICE', name: 'FOSA Desk Officer', category: 'front-office', permissions: ['VIEW_MEMBER_BALANCE', 'AUDIT_TELLER_ACTIVITY', 'APPROVE_BRANCH_LOAN_TIER1', 'TELLER_LIMIT_OVERRIDE', 'REPORTS_ACCESS'] },
+        { id: 'ROLE-TELLER', name: 'Teller Desk Officer', category: 'teller', permissions: ['POST_COUNTER_TX', 'VIEW_MEMBER_BALANCE', 'MANAGE_ASSIGNED_TILL'] },
         { id: 'ROLE-CREDIT-MAKER', name: 'Credit Origination Officer (Maker)', category: 'credit', permissions: ['ORIGINATE_LOAN_APP', 'KYC_RISK_SCORING', 'VIEW_PAR_METRICS'] },
         { id: 'ROLE-CREDIT-CHECKER', name: 'Head of Credit & Checker', category: 'credit', permissions: ['APPROVE_CREDIT_FACILITY', 'PACING_RELEASE_AUTHORIZE', 'OVERRIDE_NPA_PROVISION'] },
         { id: 'ROLE-TREASURY', name: 'Treasury & Liquidity Officer', category: 'treasury', permissions: ['EXECUTE_DFI_DRAWDOWN', 'RECONCILE_BANKS', 'PLACE_TBILLS', 'MODIFY_GL_JOURNAL', 'RUN_PARALLEL_EOD', 'REPORTS_ACCESS'] },
         { id: 'ROLE-AUDITOR', name: 'Risk Lead & Internal Auditor', category: 'board', permissions: ['VIEW_AUDIT_LOGS', 'EXPORT_SASRA_RETURNS', 'MONITOR_AML_CFT', 'READ_ALL_MODULES', 'REPORTS_ACCESS'] },
         { id: 'ROLE-BOARD-CHAIR', name: 'Board Chairman & ALCO Lead', category: 'board', permissions: ['GOVERNANCE_OVERVIEW', 'STRESS_TEST_SIMULATION', 'BOARD_ESCALATION_APPROVE', 'POLICY_THRESHOLD_CONFIG', 'REPORTS_ACCESS'] },
-        { id: 'ROLE-MEMBER', name: 'Teller Desk', category: 'teller', permissions: ['POST_COUNTER_TX', 'VIEW_MEMBER_BALANCE', 'HANDLE_MEMBER_DEPOSITS'] }
+        { id: 'ROLE-MEMBER', name: 'Customer / SACCO Member', category: 'member', permissions: ['VIEW_OWN_BALANCE', 'VIEW_OWN_LOANS'] }
       ],
 
       // --- Institutional Users & Access Control Directory (RBAC) ---
@@ -109,6 +109,7 @@ class FinageStore {
           name: 'David Ochieng',
           email: 'david.ochieng@finage.co.ke',
           roles: ['ROLE-TELLER'],
+          tellerId: 'T-102',
           branchId: 'br-01',
           branchName: 'Nairobi Central',
           singleApprovalLimit: 5000,
@@ -182,19 +183,8 @@ class FinageStore {
           mfaEnabled: true,
           lastLogin: '2026-08-28T08:00:00'
         },
-        {
-          id: 'USR-901',
-          name: 'Sarah Wanjiku Kamau',
-          email: 'sarah.kamau@barakafarms.co.ke',
-          roles: ['ROLE-MEMBER'],
-          branchId: 'br-01',
-          branchName: 'Nairobi Central',
-          singleApprovalLimit: 0,
-          dailyApprovalLimit: 0,
-          status: 'Active',
-          mfaEnabled: true,
-          lastLogin: '2026-08-28T14:00:00'
-        }
+        // Note: ROLE-MEMBER users (customers) are stored in the members[] register,
+        // not in the staff users[] directory. USR-901 removed from staff roster.
       ],
       
       // --- LAYER 0: Core Banking Members / Customer Register ---
@@ -555,8 +545,8 @@ class FinageStore {
           cashInVault: 285000,
           tellerCashLimit: 30000, // Max per-transaction cash authority for tellers; set by Branch Manager
           tillBalances: [
-            { tellerId: 'T-101', tellerName: 'Faith Mwangi', balance: 34500, status: 'Reconciled' },
-            { tellerId: 'T-102', tellerName: 'David Ochieng', balance: 41200, status: 'Reconciled' },
+            { tellerId: 'T-101', tellerName: 'Senior Counter Float', balance: 34500, status: 'Reconciled' },
+            { tellerId: 'T-102', userId: 'USR-102', tellerName: 'David Ochieng', balance: 41200, status: 'Reconciled' },
             { tellerId: 'T-103', tellerName: 'Mercy Chebet', balance: 29800, status: 'Reconciled' },
             { tellerId: 'T-104', tellerName: 'Kevin Mutua', balance: 38000, status: 'Reconciled' }
           ],
@@ -949,6 +939,41 @@ class FinageStore {
     return this.state.users.find(u => u.id === this.state.currentUserId) || this.state.users[0];
   }
 
+  getCurrentTellerTill(customState) {
+    const s = customState || this.state;
+    const currentUser = this.getCurrentUser();
+    if (!currentUser) return null;
+
+    const branch = s.branches.find(b => b.id === (currentUser.branchId || s.selectedBranchId)) || s.branches[0];
+    if (!branch || !branch.tillBalances) return null;
+
+    let till = branch.tillBalances.find(t => 
+      (t.userId && t.userId === currentUser.id) ||
+      (currentUser.tellerId && t.tellerId === currentUser.tellerId) ||
+      (t.tellerName && t.tellerName.toLowerCase().trim() === currentUser.name.toLowerCase().trim())
+    );
+
+    const userRoles = typeof UserManagementEngine !== 'undefined' ? UserManagementEngine.getUserRoles(s, currentUser.id) : [];
+    const isTeller = userRoles.some(r => r.id === 'ROLE-TELLER' || r.category === 'teller') || (currentUser.roles && currentUser.roles.includes('ROLE-TELLER'));
+
+    if (!till && isTeller) {
+      const nextNum = branch.tillBalances.length + 1;
+      const branchNum = (branch.id || '01').replace(/\D/g, '') || '1';
+      const newTillId = `T-${branchNum}0${nextNum}`;
+      till = {
+        tellerId: currentUser.tellerId || newTillId,
+        userId: currentUser.id,
+        tellerName: currentUser.name,
+        balance: 30000,
+        status: 'Active (Open)'
+      };
+      branch.tillBalances.push(till);
+      currentUser.tellerId = till.tellerId;
+    }
+
+    return till ? { ...till, branchId: branch.id, branchName: branch.name } : null;
+  }
+
   setCurrentUser(userId) {
     const user = this.state.users.find(u => u.id === userId);
     if (!user) return false;
@@ -1126,7 +1151,7 @@ class FinageStore {
       } else if (isBatch) {
         hasPermission = perms.some(p => ['POST_COUNTER_TX', 'MODIFY_GL_JOURNAL', 'APPROVE_CREDIT_FACILITY', 'EXECUTE_DFI_DRAWDOWN', 'ORIGINATE_LOAN_APP'].includes(p));
       } else if (isCounterChannel) {
-        hasPermission = perms.includes('POST_COUNTER_TX') || perms.includes('VAULT_RECONCILE');
+        hasPermission = perms.includes('POST_COUNTER_TX');
       } else if (isTreasuryTx) {
         hasPermission = perms.includes('MODIFY_GL_JOURNAL') || perms.includes('EXECUTE_DFI_DRAWDOWN') || perms.includes('PLACE_TBILLS');
       } else if (isDisbursement) {
@@ -1165,10 +1190,34 @@ class FinageStore {
       }
     }
 
-    if ((channel || '').includes('Branch FOSA') || (channel || '').includes('FOSA Counter')) {
-      const branch = this.state.branches.find(b => b.id === this.state.selectedBranchId) || this.state.branches[0];
+    if ((channel || '').includes('Branch FOSA') || (channel || '').includes('FOSA Counter') || type.startsWith('Teller ')) {
+      const branch = this.state.branches.find(b => b.id === (currentUser.branchId || this.state.selectedBranchId)) || this.state.branches[0];
       if (!branch) {
         return { valid: false, error: 'No valid branch context found for teller posting.' };
+      }
+
+      const assignedTill = branch.tillBalances?.find(t => 
+        (t.userId && t.userId === currentUser.id) ||
+        (currentUser.tellerId && t.tellerId === currentUser.tellerId) ||
+        (t.tellerName && t.tellerName.toLowerCase().trim() === currentUser.name.toLowerCase().trim())
+      );
+
+      const roles = typeof UserManagementEngine !== 'undefined' ? UserManagementEngine.getUserRoles(this.state, currentUser.id) : [];
+      const perms = roles.flatMap(r => r.permissions || []);
+      const isAdmin = perms.includes('READ_ALL_MODULES') || (currentUser.roles && currentUser.roles.includes('ROLE-ADMIN'));
+
+      if (!assignedTill && !isAdmin) {
+        return { valid: false, error: `Operator ${currentUser.name} is not assigned to an active till drawer at ${branch.name}. Only assigned tellers may post counter cash.` };
+      }
+
+      // Check physical till float for cash withdrawals
+      if (assignedTill && type.includes('Withdrawal') && assignedTill.balance < parsedAmount) {
+        return { valid: false, error: `Till Cash Shortfall: Drawer ${assignedTill.tellerId} only holds ${Formatter.money(assignedTill.balance)} float.` };
+      }
+
+      // Check single approval limit for teller
+      if (currentUser.singleApprovalLimit > 0 && parsedAmount > currentUser.singleApprovalLimit && !isAdmin) {
+        return { valid: false, error: `Amount ${Formatter.money(parsedAmount)} exceeds teller single transaction limit of ${Formatter.money(currentUser.singleApprovalLimit)}. Supervisor override required.` };
       }
     }
 
@@ -1279,9 +1328,25 @@ class FinageStore {
       const legAmt = Number(leg.amount) || 0;
       // GL 1010: Physical Branch Vault & Till Cash
       if (leg.glCode === '1010') {
-        const branch = this.state.branches.find(b => b.id === this.state.selectedBranchId) || this.state.branches[0];
+        const branch = this.state.branches.find(b => b.id === (currentUser.branchId || this.state.selectedBranchId)) || this.state.branches[0];
         if (branch) {
-          branch.cashInVault += (leg.type === 'Debit' ? legAmt : -legAmt);
+          const delta = (leg.type === 'Debit' ? legAmt : -legAmt);
+          const isCounter = (channel || '').includes('Branch FOSA') || (channel || '').includes('Counter') || type.startsWith('Teller ');
+          if (isCounter && branch.tillBalances) {
+            const assignedTill = branch.tillBalances.find(t => 
+              (t.userId && t.userId === currentUser.id) ||
+              (currentUser.tellerId && t.tellerId === currentUser.tellerId) ||
+              (t.tellerName && t.tellerName.toLowerCase().trim() === currentUser.name.toLowerCase().trim())
+            );
+            if (assignedTill) {
+              assignedTill.balance = Math.max(0, assignedTill.balance + delta);
+              assignedTill.status = 'Intraday Active';
+            } else {
+              branch.cashInVault += delta;
+            }
+          } else {
+            branch.cashInVault += delta;
+          }
         }
       }
       // GL 1040: Digital Channel & M-Pesa Float Pool
@@ -1677,8 +1742,8 @@ class FinageStore {
   getCleanState() {
     const base = this.getDefaultState();
     
-    // Keep only Admin users so login is possible
-    base.users = base.users.filter(u => u.roles.includes('ROLE-ADMIN'));
+    // Keep all staff users on clean slate — only zero out operational data
+    // (Do not wipe staff directory on reset; only clear transactions/balances)
     
     // Clear operational lists
     base.members = [];

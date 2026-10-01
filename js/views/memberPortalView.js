@@ -20,6 +20,39 @@ const TX_TYPES = [
 
 const TellerDeskView = {
   render(container, state) {
+    const currentUser = store.getCurrentUser();
+    const userRoles = typeof UserManagementEngine !== 'undefined' ? UserManagementEngine.getUserRoles(state, currentUser?.id) : [];
+    const canReadAll = userRoles.some(r => r.permissions.includes('READ_ALL_MODULES')) || (currentUser?.roles && currentUser.roles.includes('ROLE-ADMIN'));
+    const isTellerRole = userRoles.some(r => r.id === 'ROLE-TELLER' || r.category === 'teller' || r.permissions.includes('POST_COUNTER_TX'));
+
+    const currentBranch = state.branches.find(b => b.id === (currentUser?.branchId || state.selectedBranchId)) || state.branches[0];
+    const assignedTill = store.getCurrentTellerTill ? store.getCurrentTellerTill(state) : null;
+
+    if (!isTellerRole && !canReadAll) {
+      container.innerHTML = `
+        <div class="view-header-row">
+          <div class="view-heading-group">
+            <h1>Teller Operations Desk</h1>
+            <p>Cash Counter & Physical Drawer Custody</p>
+          </div>
+        </div>
+        <div class="glass-panel" style="max-width: 660px; margin: 3rem auto; padding: 2.5rem 2rem; text-align: center; border-top: 4px solid var(--accent-rose); box-shadow: 0 20px 40px rgba(0,0,0,0.12);">
+          <div style="width: 52px; height: 52px; margin: 0 auto 1.25rem; border-radius: 50%; background: var(--accent-rose-subtle); display: flex; align-items: center; justify-content: center; font-size: 1.4rem; color: var(--accent-rose); font-weight: 800; border: 1px solid var(--accent-rose);">
+            !
+          </div>
+          <h2 style="font-size: 1.2rem; font-weight: 800; color: var(--text-main); margin-bottom: 0.5rem;">Access Restricted: Assigned Tellers Only</h2>
+          <p style="font-size: 0.85rem; color: var(--text-dim); line-height: 1.6; margin-bottom: 1.5rem;">
+            The Counter Teller Desk is restricted exclusively to authorized branch cash tellers with active till custody.
+            Current operator <strong>${currentUser ? currentUser.name : 'Unknown'}</strong> is not assigned as a counter teller at ${currentBranch ? currentBranch.name : 'this branch'}.
+          </p>
+          <div style="display: inline-flex; align-items: center; gap: 0.6rem; padding: 0.75rem 1.25rem; background: var(--bg-surface-elevated); border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); font-size: 0.78rem; color: var(--text-muted);">
+            <span>Separation of Duties (SoD) Enforced · Front-office supervision is conducted under the <strong>FOSA</strong> tab.</span>
+          </div>
+        </div>
+      `;
+      return;
+    }
+
     const memberId = state.selectedMemberId;
     let profile = null;
     if (memberId) {
@@ -30,8 +63,19 @@ const TellerDeskView = {
       <!-- View Header -->
       <div class="view-header-row">
         <div class="view-heading-group">
-          <h1>Teller</h1>
-          <p>Cash posting and account activity</p>
+          <div style="display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap;">
+            <h1>Teller</h1>
+            <span class="badge badge-emerald" style="font-size: 0.72rem; padding: 3px 8px; font-weight: 800; letter-spacing: 0.05em;">
+              DRAWER: ${assignedTill ? assignedTill.tellerId : 'ASSIGNED TILL'}
+            </span>
+            <span class="badge badge-indigo" id="teller-header-float-badge" style="font-size: 0.72rem; padding: 3px 8px; font-weight: 800; font-family: var(--font-mono);">
+              FLOAT: ${assignedTill ? Formatter.money(assignedTill.balance) : '—'}
+            </span>
+            <span class="badge badge-muted" style="font-size: 0.72rem; padding: 3px 8px;">
+              ${currentBranch ? currentBranch.name : 'Branch'}
+            </span>
+          </div>
+          <p>Operator: <strong>${currentUser ? currentUser.name : 'Teller'}</strong> · FOSA Counter Cash Desk</p>
         </div>
         <div class="view-actions-group" style="display: flex; gap: 0.5rem; align-items: center;">
           ${profile ? `
@@ -435,8 +479,16 @@ const TellerDeskView = {
       });
       if (targetAmt !== calcTotal) return 'Calculated denomination total must exactly match the Target Amount.';
 
-      if (txType === 'Withdrawal' && profile.savingsBalance < targetAmt)
-        return `Insufficient funds: only ${Formatter.money(profile.savingsBalance)} available.`;
+      if (txType === 'Withdrawal') {
+        if (profile.savingsBalance < targetAmt)
+          return `Insufficient funds: only ${Formatter.money(profile.savingsBalance)} available.`;
+        if (assignedTill && assignedTill.balance < targetAmt)
+          return `Till Cash Shortfall: Drawer ${assignedTill.tellerId} only holds ${Formatter.money(assignedTill.balance)} float. Request replenishment from FOSA Supervisor.`;
+      }
+
+      if (currentUser?.singleApprovalLimit > 0 && targetAmt > currentUser.singleApprovalLimit && !canReadAll) {
+        return `Amount exceeds teller limit of ${Formatter.money(currentUser.singleApprovalLimit)}. Supervisor authorization required.`;
+      }
 
       if (txType === 'Loan Payment') {
         if (activeLoans.length === 0) return 'No active loan facilities for this member.';
@@ -646,6 +698,12 @@ const TellerDeskView = {
         if (savingsEl) {
           const updatedMember = store.state.members.find(m => m.id === profile.id);
           if (updatedMember) savingsEl.textContent = Formatter.money(updatedMember.savingsBalance);
+        }
+
+        const freshTill = store.getCurrentTellerTill ? store.getCurrentTellerTill(store.state) : null;
+        const headerFloat = container.querySelector('#teller-header-float-badge');
+        if (headerFloat && freshTill) {
+          headerFloat.textContent = `FLOAT: ${Formatter.money(freshTill.balance)}`;
         }
 
         App.showToast(`✓ ${def.label} of ${Formatter.money(amount)} posted — GL Dr ${def.debitGL} / Cr ${def.creditGL}.`, 'success');

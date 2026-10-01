@@ -77,14 +77,15 @@ const App = {
       const normalizedRole = btnRole === 'counter-ops' ? 'teller' : btnRole;
       
       // Enforce RBAC Visibility
-      if (canReadAll || currentRoleObjs.some(r => r.category === normalizedRole)) {
+      if (canReadAll || currentRoleObjs.some(r => r.category === normalizedRole || (normalizedRole === 'teller' && (r.category === 'teller' || r.category === 'counter-ops')))) {
         btn.style.display = 'flex'; // Show authorized tabs
       } else {
         btn.style.display = 'none'; // Hide unauthorized tabs
       }
 
       // Update Active State
-      if (btnRole === state.currentRole) {
+      const currentNormRole = state.currentRole === 'counter-ops' ? 'teller' : state.currentRole;
+      if (normalizedRole === currentNormRole) {
         btn.classList.add('active');
       } else {
         btn.classList.remove('active');
@@ -289,11 +290,11 @@ const App = {
       });
     }
 
-    // Logout
+    // Logout (async — ends Supabase session)
     const btnLogout = document.getElementById('btn-logout');
     if (btnLogout) {
-      btnLogout.addEventListener('click', () => {
-        UserManagementEngine.logout(store.state);
+      btnLogout.addEventListener('click', async () => {
+        await UserManagementEngine.logout(store.state);
         store.save();
       });
     }
@@ -406,15 +407,28 @@ const App = {
 window.App = App;
 
 document.addEventListener('DOMContentLoaded', async () => {
-  // 1. Immediate UI render from local operational state (0ms latency)
+  // 1. Try to restore an existing Supabase Auth session (returning operator auto-login)
+  if (window.supabase) {
+    try {
+      const restored = await UserManagementEngine.restoreSession(store.state);
+      if (restored) {
+        console.log('[Auth] Session restored from Supabase JWT.');
+        store.saveQuiet && store.saveQuiet();
+      }
+    } catch (e) {
+      console.warn('[Auth] Session restore failed:', e.message);
+    }
+  }
+
+  // 2. Immediate UI render from local operational state (0ms latency)
   App.init();
 
-  // 2. Initialize Supabase sync protocol in background
+  // 3. Initialize Supabase sync protocol in background
   if (window.SupabaseSync && typeof window.SupabaseSync.init === 'function') {
     try {
       await window.SupabaseSync.init(store);
     } catch (e) {
-      console.error("Supabase sync initialization error:", e);
+      console.error('Supabase sync initialization error:', e);
     }
   }
 });

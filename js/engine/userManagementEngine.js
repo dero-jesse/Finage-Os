@@ -20,38 +20,117 @@ const UserManagementEngine = {
   },
 
   /**
-   * Authenticate a user by email
+   * Authenticate a user — tries Supabase Auth first, falls back to local email lookup.
+   * Returns { success, error } so callers can await it.
+   */
+  async loginWithAuth(state, email, password) {
+    // --- PATH 1: Supabase Auth (real operations) ---
+    if (window.supabase) {
+      try {
+        const { data, error } = await window.supabase.auth.signInWithPassword({ email, password });
+        if (error) {
+          // Auth failed — return the Supabase error message
+          return { success: false, error: error.message };
+        }
+        // Auth succeeded — find the matching system user record
+        const systemUser = state.users.find(u => u.email.toLowerCase() === email.toLowerCase());
+        if (!systemUser || systemUser.status !== 'Active') {
+          await window.supabase.auth.signOut();
+          return { success: false, error: 'Auth succeeded but no active system user record found for this email.' };
+        }
+        this._applyLogin(state, systemUser);
+        return { success: true };
+      } catch (e) {
+        return { success: false, error: 'Auth service unreachable: ' + e.message };
+      }
+    }
+
+    // --- PATH 2: Local fallback (dev / offline mode) ---
+    const user = state.users.find(u => u.email.toLowerCase() === email.toLowerCase());
+    if (user && user.status === 'Active') {
+      this._applyLogin(state, user);
+      return { success: true };
+    }
+    return { success: false, error: 'Invalid credentials or inactive account.' };
+  },
+
+  /**
+   * Legacy sync login — kept for quick-login buttons in dev.
+   * In production the async loginWithAuth() is used.
    */
   login(state, email) {
     const user = state.users.find(u => u.email.toLowerCase() === email.toLowerCase());
     if (user && user.status === 'Active') {
-      const roles = user.roles ? user.roles.map(rId => this.getRoleById(state, rId)).filter(Boolean) : [];
-      const firstRole = roles.length > 0 ? roles[0] : null;
-      const preferredRoleCategory = roles.some(r => r.category === 'teller')
-        ? 'counter-ops'
-        : roles.some(r => r.category === 'front-office')
-          ? 'front-office'
-          : (firstRole ? firstRole.category : null);
-      
-      state.isAuthenticated = true;
-      state.currentUserId = user.id;
-      state.currentRole = preferredRoleCategory;
-      state.selectedBranchId = user.branchId;
-      state.selectedMemberId = null;
+      this._applyLogin(state, user);
       return true;
     }
     return false;
   },
 
   /**
-   * Log out current user
+   * Shared login-state mutation (used by both auth paths).
    */
-  logout(state) {
+  _applyLogin(state, user) {
+    const roles = user.roles ? user.roles.map(rId => this.getRoleById(state, rId)).filter(Boolean) : [];
+    const firstRole = roles.length > 0 ? roles[0] : null;
+    const preferredRoleCategory = roles.some(r => r.category === 'teller')
+      ? 'teller'
+      : roles.some(r => r.category === 'front-office')
+        ? 'front-office'
+        : (firstRole ? firstRole.category : null);
+    state.isAuthenticated = true;
+    state.currentUserId = user.id;
+    state.currentRole = preferredRoleCategory;
+    state.selectedBranchId = user.branchId;
+    state.selectedMemberId = null;
+  },
+
+  /**
+   * Sign out — ends Supabase session and clears local state.
+   */
+  async logout(state) {
+    if (window.supabase) {
+      try { await window.supabase.auth.signOut(); } catch (_) {}
+    }
     state.isAuthenticated = false;
     state.currentUserId = null;
     state.currentRole = null;
     state.selectedBranchId = null;
     state.selectedMemberId = null;
+  },
+
+  /**
+   * Restore session on page load (Supabase persists the JWT in localStorage).
+   * Call this once at boot to auto-log in returning operators.
+   */
+  async restoreSession(state) {
+    if (!window.supabase) return false;
+    try {
+      const { data: { session } } = await window.supabase.auth.getSession();
+      if (session && session.user) {
+        const email = session.user.email;
+        const user = state.users.find(u => u.email.toLowerCase() === email.toLowerCase());
+        if (user && user.status === 'Active') {
+          this._applyLogin(state, user);
+          return true;
+        }
+      }
+    } catch (e) {
+      console.warn('[Auth] Could not restore session:', e.message);
+    }
+    return false;
+  },
+
+  /**
+   * Create a Supabase Auth account for a new operator.
+   * Called by store.addUser() when Supabase is available.
+   */
+  async createAuthUser(email, password) {
+    if (!window.supabase) return { success: false, error: 'Supabase not available' };
+    // Use admin signUp — works with anon key in Supabase (sends confirm email)
+    const { data, error } = await window.supabase.auth.signUp({ email, password });
+    if (error) return { success: false, error: error.message };
+    return { success: true, userId: data?.user?.id };
   },
 
   /**

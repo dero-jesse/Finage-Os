@@ -124,11 +124,28 @@ CREATE TABLE IF NOT EXISTS public.audit_trail (
 -- ============================================================
 -- REALTIME (for live multi-user UI updates)
 -- ============================================================
-ALTER PUBLICATION supabase_realtime ADD TABLE public.transactions;
-ALTER PUBLICATION supabase_realtime ADD TABLE public.general_ledger;
-ALTER PUBLICATION supabase_realtime ADD TABLE public.users;
-ALTER PUBLICATION supabase_realtime ADD TABLE public.audit_trail;
-ALTER PUBLICATION supabase_realtime ADD TABLE public.branches;
+-- Safely add tables to realtime publication (idempotent — skips if already a member)
+DO $$
+DECLARE
+  t TEXT;
+  tables TEXT[] := ARRAY[
+    'transactions', 'general_ledger', 'users', 'audit_trail', 'branches'
+  ];
+BEGIN
+  FOREACH t IN ARRAY tables LOOP
+    IF NOT EXISTS (
+      SELECT 1 FROM pg_publication_tables
+      WHERE pubname = 'supabase_realtime'
+        AND schemaname = 'public'
+        AND tablename = t
+    ) THEN
+      EXECUTE format('ALTER PUBLICATION supabase_realtime ADD TABLE public.%I', t);
+      RAISE NOTICE 'Added % to supabase_realtime publication', t;
+    ELSE
+      RAISE NOTICE 'Table % already in supabase_realtime, skipping', t;
+    END IF;
+  END LOOP;
+END $$;
 
 -- ============================================================
 -- HELPER FUNCTION: Get the calling operator's system record

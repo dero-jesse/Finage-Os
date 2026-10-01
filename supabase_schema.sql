@@ -148,6 +148,29 @@ BEGIN
 END $$;
 
 -- ============================================================
+-- COLUMN MIGRATIONS (safe to run on existing tables)
+-- ADD COLUMN IF NOT EXISTS is idempotent — skips if already present.
+-- ============================================================
+
+-- Add auth_uid link to auth.users (the key that enables RLS to work)
+ALTER TABLE public.users
+  ADD COLUMN IF NOT EXISTS auth_uid UUID UNIQUE REFERENCES auth.users(id) ON DELETE SET NULL;
+
+-- Add postedBy / branchId context columns to transactions (used in RLS policies)
+ALTER TABLE public.transactions
+  ADD COLUMN IF NOT EXISTS "postedBy" TEXT,
+  ADD COLUMN IF NOT EXISTS "branchId" TEXT;
+
+-- Add tellerCashLimit to branches if missing from the existing table
+ALTER TABLE public.branches
+  ADD COLUMN IF NOT EXISTS "tellerCashLimit" NUMERIC DEFAULT 0.00;
+
+-- Add isContra and type to general_ledger if missing
+ALTER TABLE public.general_ledger
+  ADD COLUMN IF NOT EXISTS type TEXT,
+  ADD COLUMN IF NOT EXISTS "isContra" BOOLEAN DEFAULT false;
+
+-- ============================================================
 -- HELPER FUNCTION: Get the calling operator's system record
 -- Returns the row from public.users that matches auth.uid()
 -- Used inside RLS policies below.

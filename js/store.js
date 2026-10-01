@@ -81,7 +81,7 @@ class FinageStore {
         {
           id: 'USR-001',
           name: 'System Admin',
-          email: 'admin@finage.co.ke',
+          email: 'admin@finage.co.ug',
           roles: ['ROLE-ADMIN'],
           branchId: 'br-01',
           branchName: 'Head Office',

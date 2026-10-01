@@ -35,6 +35,16 @@ const SupabaseSync = (() => {
     return window.supabase;
   }
 
+  function tenantSchemaName() {
+    return window.Platform?.context?.currentOrgSchema || null;
+  }
+
+  function tenantTable(name) {
+    const schemaName = tenantSchemaName();
+    if (!schemaName) throw new Error('Select an organization before syncing operational data.');
+    return db().schema(schemaName).from(name);
+  }
+
   function isAvailable() {
     return !!(window.supabase);
   }
@@ -172,8 +182,7 @@ const SupabaseSync = (() => {
     const CHUNK = 100;
     for (let i = 0; i < valid.length; i += CHUNK) {
       const chunk = valid.slice(i, i + CHUNK);
-      const { error } = await db()
-        .from(table)
+      const { error } = await tenantTable(table)
         .upsert(chunk, { onConflict: conflictKey, ignoreDuplicates: false });
       if (error) {
         console.error(`[SyncEngine] upsert ${table} failed:`, error.message);
@@ -183,7 +192,7 @@ const SupabaseSync = (() => {
   }
 
   async function pushDirty(state) {
-    if (!isAvailable() || !state) return;
+    if (!isAvailable() || !state || !tenantSchemaName()) return;
     if (_pushInFlight) return;
     _pushInFlight = true;
     setStatus('syncing');
@@ -269,7 +278,7 @@ const SupabaseSync = (() => {
   }
 
   async function pushAll(state) {
-    if (!isAvailable() || !state) return;
+    if (!isAvailable() || !state || !tenantSchemaName()) return;
     ['roles', 'branches', 'users', 'members', 'generalLedger', 'transactions', 'auditTrail'].forEach(k => _pushQueue.add(k));
     await pushDirty(state);
   }
@@ -277,73 +286,37 @@ const SupabaseSync = (() => {
   // --- Pull Operations ---
 
   async function pullAll(state) {
-    if (!isAvailable() || !state) return;
+    if (!isAvailable() || !state || !tenantSchemaName()) return;
     setStatus('syncing');
 
     try {
       const [
-        { data: roles },
-        { data: users },
-        { data: branches },
-        { data: members },
-        { data: gl },
-        { data: transactions },
-        { data: audit }
+        { data: roles, error: rolesError },
+        { data: users, error: usersError },
+        { data: branches, error: branchesError },
+        { data: members, error: membersError },
+        { data: gl, error: glError },
+        { data: transactions, error: transactionsError },
+        { data: audit, error: auditError }
       ] = await Promise.all([
-        db().from('roles').select('*'),
-        db().from('users').select('*'),
-        db().from('branches').select('*'),
-        db().from('members').select('*'),
-        db().from('general_ledger').select('*'),
-        db().from('transactions').select('*').order('date', { ascending: false }).limit(500),
-        db().from('audit_trail').select('*').order('timestamp', { ascending: false }).limit(500)
+        tenantTable('roles').select('*'),
+        tenantTable('users').select('*'),
+        tenantTable('branches').select('*'),
+        tenantTable('members').select('*'),
+        tenantTable('general_ledger').select('*'),
+        tenantTable('transactions').select('*').order('date', { ascending: false }).limit(500),
+        tenantTable('audit_trail').select('*').order('timestamp', { ascending: false }).limit(500)
       ]);
+      const queryError = [rolesError, usersError, branchesError, membersError, glError, transactionsError, auditError]
+        .find(error => error);
+      if (queryError) throw queryError;
 
-      let changed = false;
-
-      if (roles && roles.length > 0) {
-        state.roles = roles;
-        changed = true;
-      }
-
-      if (users && users.length > 0) {
-        const remoteMap = new Map(users.map(u => [u.id, u]));
-        const localOnly = (state.users || []).filter(u => !remoteMap.has(u.id));
-        state.users = [...users, ...localOnly];
-        changed = true;
-      }
-
-      if (branches && branches.length > 0) {
-        const remoteMap = new Map(branches.map(b => [b.id, b]));
-        const localOnly = (state.branches || []).filter(b => !remoteMap.has(b.id));
-        state.branches = [...branches, ...localOnly];
-        changed = true;
-      }
-
-      if (members && members.length > 0) {
-        const remoteMap = new Map(members.map(m => [m.id, m]));
-        const localOnly = (state.members || []).filter(m => !remoteMap.has(m.id));
-        const merged = members.map(rm => {
-          const local = (state.members || []).find(lm => lm.id === rm.id);
-          return local ? { ...local, ...rm } : rm;
-        });
-        state.members = [...merged, ...localOnly];
-        changed = true;
-      }
-
-      if (gl && gl.length > 0) {
-        const remoteMap = new Map(gl.map(g => [g.code, g]));
-        state.generalLedger = (state.generalLedger || []).map(lg => {
-          const rg = remoteMap.get(String(lg.code));
-          return rg ? { ...lg, balance: rg.balance } : lg;
-        });
-        changed = true;
-      }
-
-      if (transactions && transactions.length > 0) {
-        const localMap = new Map((state.recentTransactions || []).map(t => [t.id, t]));
-        transactions.forEach(rt => {
-          localMap.set(rt.id, {
+      state.roles = roles || [];
+      state.users = users || [];
+      state.branches = branches || [];
+      state.members = members || [];
+      state.generalLedger = gl || [];
+      state.recentTransactions = (transactions || []).map(rt => ({
             id: rt.id,
             type: rt.type,
             channel: rt.channel,
@@ -354,18 +327,8 @@ const SupabaseSync = (() => {
             time: rt.date ? new Date(rt.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Now',
             timestamp: rt.date,
             description: rt.details
-          });
-        });
-        state.recentTransactions = [...localMap.values()]
-          .sort((a, b) => new Date(b.timestamp || 0) - new Date(a.timestamp || 0));
-        changed = true;
-      }
-
-      if (audit && audit.length > 0) {
-        const localMap = new Map((state.auditTrail || []).map(a => [a.id, a]));
-        audit.forEach(ra => {
-          if (!localMap.has(ra.id)) {
-            localMap.set(ra.id, {
+          }));
+      state.auditTrail = (audit || []).map(ra => ({
               id: ra.id,
               timestamp: ra.timestamp,
               userId: ra.userId,
@@ -375,21 +338,13 @@ const SupabaseSync = (() => {
               entityId: ra.entityId,
               description: ra.description || ra.action,
               ipAddress: ra.ipAddress || '127.0.0.1'
-            });
-          }
-        });
-        state.auditTrail = [...localMap.values()]
-          .sort((a, b) => new Date(b.timestamp || 0) - new Date(a.timestamp || 0));
-        changed = true;
-      }
+            }));
 
-      if (changed) {
-        localStorage.setItem((_storeRef && _storeRef.storageKey) || 'finage_v3_state', JSON.stringify(state));
-        _lastSync = new Date().toISOString();
-        _connected = true;
-        if (_storeRef && _storeRef.notify) {
-          _storeRef.notify();
-        }
+      localStorage.setItem((_storeRef && _storeRef.storageKey) || 'finage_os_v3_state', JSON.stringify(state));
+      _lastSync = new Date().toISOString();
+      _connected = true;
+      if (_storeRef && _storeRef.notify) {
+        _storeRef.notify();
       }
 
       _lastSync = new Date().toISOString();
@@ -405,10 +360,11 @@ const SupabaseSync = (() => {
   // --- Realtime Subscription ---
 
   function setupRealtime(storeInstance) {
-    if (!isAvailable()) return;
+    const schemaName = tenantSchemaName();
+    if (!isAvailable() || !schemaName) return;
     try {
-      db().channel('public:finage_realtime')
-        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'transactions' }, payload => {
+      db().channel(`${schemaName}:finage_realtime`)
+        .on('postgres_changes', { event: 'INSERT', schema: schemaName, table: 'transactions' }, payload => {
           const s = (storeInstance && storeInstance.state) || (window.store && store.state);
           if (!s || !payload.new) return;
           const exists = (s.recentTransactions || []).some(t => t.id === payload.new.id);
@@ -504,19 +460,25 @@ const SupabaseSync = (() => {
       return;
     }
 
+    if (!tenantSchemaName()) {
+      stopAutoSync();
+      setStatus('offline');
+      return;
+    }
+
+    stopAutoSync();
+
+    const { data: sessionData, error: sessionError } = await db().auth.getSession();
+    if (sessionError || !sessionData?.session) {
+      setStatus('offline');
+      return;
+    }
+
     setStatus('syncing');
     try {
       // Introspect remote members count
-      const { data: members, error } = await db().from('members').select('id').limit(2);
-      if (!error && (!members || members.length === 0)) {
-        // First boot: Remote is empty, push baseline state up
-        console.log('[SyncEngine] Remote unseeded. Seeding Supabase from institutional baseline...');
-        await pushAll(s);
-      } else {
-        // Remote has data, execute pull & merge
-        console.log('[SyncEngine] Remote data detected. Performing intelligent merge...');
-        await pullAll(s);
-      }
+      console.log('[SyncEngine] Loading canonical data for schema ' + tenantSchemaName() + '.');
+      await pullAll(s);
 
       setupRealtime(_storeRef);
       startAutoSync(_storeRef);
@@ -541,6 +503,7 @@ const SupabaseSync = (() => {
 
   return {
     init,
+    setupRealtime,
     startAutoSync,
     stopAutoSync,
     markDirty,

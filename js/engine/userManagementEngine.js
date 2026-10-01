@@ -32,8 +32,40 @@ const UserManagementEngine = {
           // Auth failed — return the Supabase error message
           return { success: false, error: error.message };
         }
-        // Auth succeeded — find the matching system user record
-        const systemUser = state.users.find(u => u.email.toLowerCase() === email.toLowerCase());
+        if (data.user?.user_metadata?.password_change_required === true) {
+          state.passwordChangeRequired = true;
+          state.passwordChangeEmail = data.user.email || email;
+          state.isAuthenticated = true;
+          return { success: true, passwordChangeRequired: true };
+        }
+        if (window.Platform) await window.Platform.init();
+        const normalizedEmail = email.toLowerCase();
+        let systemUser = state.users.find(u => u.email.toLowerCase() === normalizedEmail);
+
+        if (window.Platform?.isSuperuser()) {
+          const platformUser = window.Platform.context.platformUser;
+          systemUser = systemUser && systemUser.status === 'Active' ? systemUser : {
+            id: 'USR-000',
+            name: platformUser.name,
+            email: platformUser.email,
+            roles: ['ROLE-ADMIN'],
+            branchId: null,
+            branchName: 'Platform',
+            singleApprovalLimit: 0,
+            dailyApprovalLimit: 0,
+            status: 'Active',
+            mfaEnabled: true
+          };
+          if (!state.users.some(user => user.id === systemUser.id)) state.users.push(systemUser);
+          this._applyLogin(state, systemUser);
+          state.orgSelectorShown = true;
+          return { success: true };
+        }
+
+        if (window.SupabaseSync && window.Platform?.context?.currentOrgSchema) {
+          await window.SupabaseSync.init(window.store);
+          systemUser = state.users.find(u => u.email.toLowerCase() === normalizedEmail);
+        }
         if (!systemUser || systemUser.status !== 'Active') {
           await window.supabase.auth.signOut();
           return { success: false, error: 'Auth succeeded but no active system user record found for this email.' };
@@ -79,7 +111,7 @@ const UserManagementEngine = {
         ? 'front-office'
         : (firstRole ? firstRole.category : null);
 
-    if (window.Platform) {
+    if (window.Platform && !window.supabase) {
       window.Platform.context.isPlatformSuperuser = user.email && user.email.toLowerCase() === 'superuser@finage.io';
     }
 
@@ -113,6 +145,12 @@ const UserManagementEngine = {
     try {
       const { data: { session } } = await window.supabase.auth.getSession();
       if (session && session.user) {
+        if (session.user.user_metadata?.password_change_required === true) {
+          state.passwordChangeRequired = true;
+          state.passwordChangeEmail = session.user.email || null;
+          state.isAuthenticated = true;
+          return true;
+        }
         const email = session.user.email;
         const user = state.users.find(u => u.email.toLowerCase() === email.toLowerCase());
         if (user && user.status === 'Active') {

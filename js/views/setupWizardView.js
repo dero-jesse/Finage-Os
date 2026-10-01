@@ -15,7 +15,8 @@ const SetupWizardView = {
     roles: []
   },
   _loading: false,
-  _generatedSql: null,
+  _provisionedSchema: null,
+  _invitationResults: [],
 
   // ─── Default GL template (standard SACCO COA) ───────────────────────────
   _defaultGL: [
@@ -58,7 +59,8 @@ const SetupWizardView = {
       staffUsers: [],
       roles: [...this._defaultRoles]
     };
-    this._generatedSql = null;
+    this._provisionedSchema = null;
+    this._invitationResults = [];
     this._render();
   },
 
@@ -83,10 +85,10 @@ const SetupWizardView = {
       const done    = num < this._step  ? 'background:#d1fae5; color:#065f46; border-color:#6ee7b7;' : '';
       const future  = num > this._step  ? 'background:#f1f5f9; color:#94a3b8; border-color:#e2e8f0;' : '';
       return `
-        <div style="display:flex;flex-direction:column;align-items:center;gap:4px;flex:1;">
+        <button type="button" data-wizard-step="${num}" aria-label="${num < this._step ? `Return to ${t}` : t}" ${num >= this._step ? 'disabled' : ''} style="display:flex;flex-direction:column;align-items:center;gap:4px;flex:1;border:0;background:transparent;padding:0;cursor:${num < this._step ? 'pointer' : 'default'};">
           <div style="width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:0.8rem;border:2px solid;transition:all .3s;${active||done||future}">${num < this._step ? '✓' : num}</div>
           <span style="font-size:0.58rem;color:${num===this._step?'#059669':num<this._step?'#065f46':'#94a3b8'};font-weight:${num===this._step?'700':'500'};text-align:center;line-height:1.2;">${t}</span>
-        </div>
+        </button>
         ${i < stepTitles.length - 1 ? '<div style="flex:1;height:2px;background:' + (num < this._step ? '#6ee7b7' : '#e2e8f0') + ';margin-top:-18px;"></div>' : ''}
       `;
     }).join('');
@@ -115,8 +117,9 @@ const SetupWizardView = {
 
           <!-- Footer -->
           <div style="padding:1rem 2rem;border-top:1px solid #f1f5f9;display:flex;align-items:center;justify-content:space-between;gap:1rem;background:#fafafa;">
-            ${this._step > 1 && this._step < this._totalSteps ? `<button id="wizard-back" style="padding:.6rem 1.4rem;border-radius:10px;border:2px solid #e2e8f0;background:#fff;font-weight:700;font-size:.82rem;cursor:pointer;color:#475569;">← Back</button>` : '<div></div>'}
+            <div></div>
             <div style="display:flex;gap:.75rem;">
+              ${this._step > 1 ? `<button id="wizard-back" style="padding:.6rem 1.4rem;border-radius:10px;border:2px solid #e2e8f0;background:#fff;font-weight:700;font-size:.82rem;cursor:pointer;color:#475569;">← Previous Step</button>` : ''}
               ${this._step < this._totalSteps
                 ? `<button id="wizard-next" style="padding:.7rem 2rem;border-radius:12px;border:none;background:linear-gradient(135deg,#10b981,#059669);color:#fff;font-weight:800;font-size:.85rem;cursor:pointer;box-shadow:0 4px 14px rgba(16,185,129,0.35);">Next →</button>`
                 : `<button id="wizard-provision" style="padding:.7rem 2rem;border-radius:12px;border:none;background:linear-gradient(135deg,#7c3aed,#6d28d9);color:#fff;font-weight:800;font-size:.85rem;cursor:pointer;box-shadow:0 4px 14px rgba(124,58,237,0.35);" ${this._loading?'disabled':''}>🚀 ${this._loading ? 'Provisioning...' : 'Provision Organisation'}</button>`
@@ -165,6 +168,7 @@ const SetupWizardView = {
         ], o.regulatoryBody || 'BOU')}
         ${input('wiz-financial-year', 'Current Financial Year', 'text', '2026', o.financialYear || '2026')}
         ${input('wiz-min-liquidity', 'Min Liquidity Ratio (%)', 'number', '15', o.minLiquidityRatio || '15')}
+        ${input('wiz-owner-name', 'Organisation Owner Name', 'text', 'Organisation Administrator', o.ownerName)}
         ${input('wiz-superuser-email', 'Org Superuser Email', 'email', 'admin@yourorg.co.ug', o.superuserEmail)}
       </div>
     `;
@@ -257,11 +261,11 @@ const SetupWizardView = {
 
   // Step 4: Staff Users
   _buildStep4() {
-    const branchOptions = this._data.branches.map(b =>
-      `<option value="${b.id}">${b.name}</option>`
+    const branchOptions = (user) => this._data.branches.map(b =>
+      `<option value="${b.id}" ${user.branchId === b.id ? 'selected' : ''}>${b.name}</option>`
     ).join('');
-    const roleOptions = this._data.roles.map(r =>
-      `<option value="${r.id}">${r.name}</option>`
+    const roleOptions = (user) => this._data.roles.map(r =>
+      `<option value="${r.id}" ${(user.roles || []).includes(r.id) || user.roleId === r.id ? 'selected' : ''}>${r.name}</option>`
     ).join('');
 
     const rows = this._data.staffUsers.map((u, i) => `
@@ -270,12 +274,12 @@ const SetupWizardView = {
         <td style="padding:.4rem .5rem;"><input type="email" class="form-control form-control-sm" style="font-size:.72rem;" data-usrfield="email" data-idx="${i}" value="${u.email}"></td>
         <td style="padding:.4rem .5rem;">
           <select class="form-control form-control-sm" style="font-size:.72rem;" data-usrfield="roleId" data-idx="${i}">
-            ${roleOptions}
+            ${roleOptions(u)}
           </select>
         </td>
         <td style="padding:.4rem .5rem;">
           <select class="form-control form-control-sm" style="font-size:.72rem;" data-usrfield="branchId" data-idx="${i}">
-            ${branchOptions}
+            ${branchOptions(u)}
           </select>
         </td>
         <td style="padding:.4rem .5rem;">
@@ -286,7 +290,7 @@ const SetupWizardView = {
 
     return `
       <div style="margin-bottom:.75rem;display:flex;align-items:center;justify-content:space-between;">
-        <p style="margin:0;font-size:.82rem;color:#475569;">Add initial staff users. They'll receive Supabase Auth invites to set passwords.</p>
+        <p style="margin:0;font-size:.82rem;color:#475569;">The organisation owner and each staff member will receive a Supabase Auth invitation to set a password.</p>
         <button id="btn-add-user" style="padding:.4rem 1rem;border-radius:8px;border:2px solid #10b981;background:#f0fdf4;color:#059669;font-weight:700;font-size:.75rem;cursor:pointer;">+ Add Staff User</button>
       </div>
       ${this._data.staffUsers.length === 0 ? `
@@ -317,6 +321,9 @@ const SetupWizardView = {
   // Step 5: Review & Provision
   _buildStep5() {
     const o = this._data.org;
+    const escapeHtml = value => String(value || '').replace(/[&<>"']/g, char => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    })[char]);
     const pill = (label, val, color='#059669') =>
       `<div style="display:flex;flex-direction:column;gap:2px;padding:.6rem .9rem;background:#f8fafc;border-radius:10px;border:1px solid #e2e8f0;">
         <span style="font-size:.6rem;color:#94a3b8;font-weight:700;text-transform:uppercase;letter-spacing:.06em;">${label}</span>
@@ -351,23 +358,21 @@ const SetupWizardView = {
           </div>
         </div>
 
-        ${this._generatedSql ? `
-          <div style="background:#1e293b;border-radius:12px;padding:1rem;max-height:200px;overflow-y:auto;">
-            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.5rem;">
-              <span style="font-size:.7rem;color:#94a3b8;font-weight:700;text-transform:uppercase;letter-spacing:.06em;">Generated SQL (${o.id}.sql)</span>
-              <button id="btn-download-sql" style="padding:.3rem .8rem;border-radius:6px;border:1px solid #475569;background:#334155;color:#94a3b8;font-size:.68rem;cursor:pointer;font-weight:600;">⬇ Download</button>
-            </div>
-            <pre style="font-family:monospace;font-size:.65rem;color:#a3e635;margin:0;line-height:1.6;">${this._generatedSql.replace(/</g,'&lt;').replace(/>/g,'&gt;').slice(0,2000)}${this._generatedSql.length > 2000 ? '\n... (truncated)' : ''}</pre>
-          </div>
+        ${this._provisionedSchema ? `
           <div style="background:#f0fdf4;border:1px solid #a7f3d0;border-radius:12px;padding:1rem;font-size:.82rem;color:#065f46;">
-            <b>✅ Organisation provisioned successfully!</b> The schema has been created in Supabase and the SQL file is ready for download. Staff users can now be invited via Supabase Authentication.
+            <b>Organisation provisioned successfully.</b> PostgreSQL created and seeded <code>${escapeHtml(this._provisionedSchema)}</code> directly.
+            ${this._invitationResults.map(invitation => {
+              const statusLabel = invitation.status === 'invited' ? 'Invitation sent' : invitation.status === 'existing_account_linked' ? 'Existing account linked' : 'Invitation needs attention';
+              const color = invitation.status === 'invited' || invitation.status === 'existing_account_linked' ? '#065f46' : '#b91c1c';
+              return `<div style="margin-top:.4rem;color:${color};">${statusLabel}: ${escapeHtml(invitation.email)}${invitation.message ? ` (${escapeHtml(invitation.message)})` : ''}</div>`;
+            }).join('')}
           </div>
         ` : `
           <div style="background:#fffbeb;border:1px solid #fbbf24;border-radius:12px;padding:1rem;font-size:.82rem;color:#92400e;">
             <b>⚠️ Ready to provision.</b> Clicking "Provision Organisation" will:<br>
-            • Create a dedicated PostgreSQL schema in Supabase<br>
-            • Seed roles, branches, GL accounts, and staff users<br>
-            • Generate a dedicated SQL file for version control<br>
+            • Create a dedicated PostgreSQL schema directly in Supabase<br>
+            • Seed the owner, roles, branches, chart of accounts, and staff in one database transaction<br>
+            • Send password-setup invitations to the owner and staff<br>
             • Activate this organisation for login
           </div>
         `}
@@ -390,6 +395,13 @@ const SetupWizardView = {
     // Back
     const backBtn = overlay.querySelector('#wizard-back');
     if (backBtn) backBtn.addEventListener('click', () => { this._step--; this._render(); });
+
+    overlay.querySelectorAll('[data-wizard-step]:not(:disabled)').forEach(button => {
+      button.addEventListener('click', () => {
+        this._step = Number(button.dataset.wizardStep);
+        this._render();
+      });
+    });
 
     // Provision
     const provBtn = overlay.querySelector('#wizard-provision');
@@ -514,18 +526,6 @@ const SetupWizardView = {
       });
     }
 
-    // Download SQL
-    const dlBtn = overlay.querySelector('#btn-download-sql');
-    if (dlBtn) {
-      dlBtn.addEventListener('click', () => {
-        if (!this._generatedSql) return;
-        const blob = new Blob([this._generatedSql], { type: 'text/plain' });
-        const a = document.createElement('a');
-        a.href = URL.createObjectURL(blob);
-        a.download = (this._data.org.id || 'org') + '_seed.sql';
-        a.click();
-      });
-    }
   },
 
   // ─── Navigation ─────────────────────────────────────────────────────────
@@ -550,11 +550,12 @@ const SetupWizardView = {
       regulatoryBody:  get('wiz-regulatory-body'),
       financialYear:   get('wiz-financial-year'),
       minLiquidityRatio: parseFloat(get('wiz-min-liquidity')) || 15,
+      ownerName:       get('wiz-owner-name').trim(),
       superuserEmail:  get('wiz-superuser-email').trim()
     };
 
-    if (!o.id || !o.name || !o.superuserEmail) {
-      if (App && App.showToast) App.showToast('Org ID, Legal Name, and Superuser Email are required.', 'danger');
+    if (!o.id || !o.name || !o.ownerName || !o.superuserEmail) {
+      if (App && App.showToast) App.showToast('Org ID, Legal Name, Owner Name, and Owner Email are required.', 'danger');
       return false;
     }
     this._data.org = o;
@@ -564,6 +565,27 @@ const SetupWizardView = {
   async _onProvision(overlay) {
     if (this._loading) return;
     const errEl = overlay.querySelector('#wizard-error');
+
+    const emailOwners = new Map();
+    const invitationTargets = [
+      { email: this._data.org.superuserEmail, label: 'Organisation owner' },
+      ...this._data.staffUsers.map((user, index) => ({
+        email: user.email,
+        label: `Staff row ${index + 1}`
+      }))
+    ];
+    for (const target of invitationTargets) {
+      const normalizedEmail = String(target.email || '').trim().toLowerCase();
+      const existingLabel = emailOwners.get(normalizedEmail);
+      if (existingLabel) {
+        if (errEl) {
+          errEl.textContent = `${normalizedEmail} is entered for both ${existingLabel} and ${target.label}. The owner already receives an administrator account and invitation. Remove the duplicate staff row or use a different staff email.`;
+          errEl.style.display = 'block';
+        }
+        return;
+      }
+      emailOwners.set(normalizedEmail, target.label);
+    }
 
     // Resolve user IDs for staff (ensure roles array is set)
     this._data.staffUsers.forEach(u => {
@@ -584,7 +606,11 @@ const SetupWizardView = {
         staffUsers: this._data.staffUsers
       });
 
-      this._generatedSql = result.sqlContent;
+      this._provisionedSchema = result.schemaName;
+      this._invitationResults = result.invitations;
+      if (window.SupabaseSync && typeof SupabaseSync.init === 'function') {
+        await SupabaseSync.init(store);
+      }
       if (App && App.showToast) App.showToast('Organisation "' + this._data.org.name + '" provisioned successfully!', 'success');
       // Re-render step 5 to show the success state + SQL preview
       this._render();

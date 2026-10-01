@@ -113,6 +113,11 @@ const App = {
         return;
       }
 
+      if (state.passwordChangeRequired) {
+        LoginView.renderPasswordChange(this.viewport, state);
+        return;
+      }
+
       if (!state.isAuthenticated) {
         LoginView.render(this.viewport, state);
         return;
@@ -419,8 +424,8 @@ const App = {
     if (store.state.orgSelectorShown) return true;
     const orgs = Platform.getOrganizations();
     if (!orgs || orgs.length === 0) {
-      // If no orgs loaded yet, don't block (might still be loading)
-      return false;
+      // A verified live superuser with no tenants must start in organization setup.
+      return !!(window.supabase && Platform.isSuperuser());
     }
     const activeOrgs = orgs.filter(o => o.status === 'active');
     if (activeOrgs.length <= 1) return false; // Auto-selected or none
@@ -695,7 +700,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     try {
       await Platform.init();
       // If org was resolved, patch store institution info
-      if (Platform.getActiveOrg()) {
+      if (Platform.getActiveOrg() || Platform.isSuperuser()) {
         store.notify();
       }
     } catch (e) {

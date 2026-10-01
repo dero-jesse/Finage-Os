@@ -23,6 +23,11 @@ class FinageStore {
           parsed.trialBalanceExceptions = defaultState.trialBalanceExceptions;
           parsed.smsAlerts = defaultState.smsAlerts || [];
         }
+        parsed.users = (parsed.users || []).filter(user => user.email?.toLowerCase() !== 'admin@finage.co.ug');
+        const platformSuperuser = defaultState.users.find(user => user.email === 'superuser@finage.io');
+        if (platformSuperuser && !parsed.users.some(user => user.email?.toLowerCase() === platformSuperuser.email)) {
+          parsed.users.push(platformSuperuser);
+        }
         return parsed;
       } catch (e) {
         console.warn('Failed to parse stored state, using defaults', e);
@@ -82,19 +87,6 @@ class FinageStore {
           id: 'USR-000',
           name: 'Platform Superuser',
           email: 'superuser@finage.io',
-          roles: ['ROLE-ADMIN'],
-          branchId: 'br-01',
-          branchName: 'Head Office',
-          singleApprovalLimit: 10000000,
-          dailyApprovalLimit: 50000000,
-          status: 'Active',
-          mfaEnabled: true,
-          lastLogin: '2026-09-01T08:00:00'
-        },
-        {
-          id: 'USR-001',
-          name: 'System Admin',
-          email: 'admin@finage.co.ug',
           roles: ['ROLE-ADMIN'],
           branchId: 'br-01',
           branchName: 'Head Office',

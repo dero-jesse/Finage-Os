@@ -6,6 +6,70 @@
 const LoginView = {
   _loading: false,
 
+  renderPasswordChange(container, state) {
+    container.innerHTML = `
+      <div class="login-wrapper" style="display:flex;height:100vh;width:100vw;background:linear-gradient(135deg,#f5faf6 0%,#eef8f3 100%);align-items:center;justify-content:center;position:fixed;inset:0;z-index:10001;padding:1rem;">
+        <div class="glass-panel" style="width:440px;max-width:100%;padding:2rem;display:flex;flex-direction:column;gap:1rem;text-align:center;border-top:6px solid var(--accent-green-dark);box-shadow:0 26px 60px rgba(11,52,43,.12);border-radius:16px;background:rgba(255,255,255,.94);">
+          <div class="brand-title" style="font-size:1.25rem;color:var(--accent-green-darkest);">FINAGE OS</div>
+          <h1 style="font-size:1.1rem;margin:0;color:#0f172a;">Set your personal password</h1>
+          <p style="font-size:.78rem;color:#64748b;margin:0;">This one-time password must be replaced before you can access the organization.</p>
+          <form id="password-change-form" style="display:flex;flex-direction:column;gap:.75rem;text-align:left;">
+            <label class="form-label" for="new-password">New password</label>
+            <input id="new-password" class="form-control" type="password" autocomplete="new-password" minlength="12" required>
+            <label class="form-label" for="confirm-password">Confirm new password</label>
+            <input id="confirm-password" class="form-control" type="password" autocomplete="new-password" minlength="12" required>
+            <div id="password-change-error" role="alert" style="display:none;color:#b91c1c;font-size:.78rem;text-align:left;"></div>
+            <button id="btn-save-password" class="btn btn-primary" type="submit" style="justify-content:center;">Update Password</button>
+          </form>
+        </div>
+      </div>
+    `;
+
+    const form = container.querySelector('#password-change-form');
+    const saveButton = container.querySelector('#btn-save-password');
+    const error = container.querySelector('#password-change-error');
+    form.addEventListener('submit', async event => {
+      event.preventDefault();
+      const newPassword = container.querySelector('#new-password').value;
+      const confirmPassword = container.querySelector('#confirm-password').value;
+      if (newPassword.length < 12) {
+        error.textContent = 'Use at least 12 characters for your new password.';
+        error.style.display = 'block';
+        return;
+      }
+      if (newPassword !== confirmPassword) {
+        error.textContent = 'The passwords do not match.';
+        error.style.display = 'block';
+        return;
+      }
+
+      saveButton.disabled = true;
+      saveButton.textContent = 'Updating…';
+      error.style.display = 'none';
+      try {
+        const { error: updateError } = await window.supabase.auth.updateUser({
+          password: newPassword,
+          data: { password_change_required: false }
+        });
+        if (updateError) throw updateError;
+        await window.supabase.auth.signOut();
+        state.passwordChangeRequired = false;
+        state.passwordChangeEmail = null;
+        state.isAuthenticated = false;
+        state.currentUserId = null;
+        state.currentRole = null;
+        if (window.App) App.showToast('Password updated. Sign in with your new password.', 'success');
+        store.save();
+      } catch (changeError) {
+        error.textContent = changeError.message || 'Password update failed.';
+        error.style.display = 'block';
+      } finally {
+        saveButton.disabled = false;
+        saveButton.textContent = 'Update Password';
+      }
+    });
+  },
+
   render(container, state) {
     container.innerHTML = `
       <div class="login-wrapper" style="display: flex; height: 100vh; width: 100vw; background:
@@ -56,9 +120,6 @@ const LoginView = {
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.45rem;">
               <button class="btn btn-secondary btn-sm btn-quick-login" data-email="superuser@finage.io" style="font-size: 0.68rem; justify-content: flex-start; text-align: left;">
                 Platform Superuser
-              </button>
-              <button class="btn btn-secondary btn-sm btn-quick-login" data-email="admin@finage.co.ug" style="font-size: 0.68rem; justify-content: flex-start; text-align: left;">
-                Admin (System)
               </button>
               <button class="btn btn-secondary btn-sm btn-quick-login" data-email="caroline.wanjala@finage.co.ke" style="font-size: 0.68rem; justify-content: flex-start; text-align: left;">
                 Treasury Manager

@@ -1,97 +1,79 @@
--- ============================================================
--- FINAGE OS — GO-LIVE CLEAN SLATE
--- Clears ALL demo/simulation data from Supabase while
--- preserving staff users, roles, and branch structure.
---
--- Run AFTER seed_admin_user.sql and supabase_schema.sql.
--- Run this ONCE before starting real operations.
--- ============================================================
+-- FINAGE OS — TENANT GO-LIVE CLEAN SLATE
+-- Clears operational/demo data only for the explicitly selected active org.
+-- Preserves organization records, staff users, roles, branches, and GL accounts.
+-- Set v_org_id before running. Run once before real operations begin.
 
-BEGIN;
+DO $$
+DECLARE
+  v_org_id TEXT := NULL;
+  v_schema TEXT;
+  v_active_org_count INTEGER;
+  v_active_org_ids TEXT;
+  v_members BIGINT;
+  v_transactions BIGINT;
+  v_audit BIGINT;
+BEGIN
+  IF v_org_id IS NULL OR v_org_id = '' THEN
+    SELECT COUNT(*), string_agg(id, ', ' ORDER BY id)
+    INTO v_active_org_count, v_active_org_ids
+    FROM public.organizations
+    WHERE status = 'active';
 
--- ──────────────────────────────────────────────────────────
--- 1. Wipe operational data (transactions, audit, members)
---    These are completely replaced by real data going forward.
--- ──────────────────────────────────────────────────────────
-DELETE FROM public.audit_trail;
-DELETE FROM public.transactions;
-DELETE FROM public.members;
+    IF v_active_org_count = 0 THEN
+      RAISE EXCEPTION 'No active organization exists. Provision an organization before go-live cleanup.';
+    ELSIF v_active_org_count > 1 THEN
+      RAISE EXCEPTION 'Multiple active organizations found (%). Set v_org_id explicitly. Active IDs: %',
+        v_active_org_count, v_active_org_ids;
+    END IF;
 
--- ──────────────────────────────────────────────────────────
--- 2. Zero out the General Ledger balances
---    All accounts start at 0 — real opening entries are posted
---    manually as journal entries by the Treasury officer.
--- ──────────────────────────────────────────────────────────
-UPDATE public.general_ledger SET balance = 0;
+    SELECT id INTO v_org_id
+    FROM public.organizations
+    WHERE status = 'active'
+    LIMIT 1;
+  END IF;
 
--- ──────────────────────────────────────────────────────────
--- 3. Zero out branch vaults and till floats
---    Tellers will receive their opening floats from the vault
---    at the start of the first real business day.
--- ──────────────────────────────────────────────────────────
-UPDATE public.branches SET
-  "cashInVault" = 0,
-  "reconciliationDiscrepancy" = 0,
-  "tillBalances" = (
-    -- Keep the teller names/IDs but zero all balances
-    SELECT jsonb_agg(
-      till || '{"balance": 0, "status": "Pending Open"}'::jsonb
+  SELECT schema_name INTO v_schema
+  FROM public.organizations
+  WHERE id = v_org_id AND status = 'active';
+
+  IF v_schema IS NULL THEN
+    RAISE EXCEPTION 'No active organization found for id %.', v_org_id;
+  END IF;
+
+  EXECUTE format('DELETE FROM %I.audit_trail', v_schema);
+  EXECUTE format('DELETE FROM %I.transactions', v_schema);
+  EXECUTE format('DELETE FROM %I.members', v_schema);
+  EXECUTE format('UPDATE %I.general_ledger SET balance = 0', v_schema);
+  EXECUTE format($sql$
+    UPDATE %I.branches
+    SET "cashInVault" = 0,
+        "reconciliationDiscrepancy" = 0,
+        "tillBalances" = COALESCE((
+          SELECT jsonb_agg(till || '{"balance": 0, "status": "Pending Open"}'::jsonb)
+          FROM jsonb_array_elements(COALESCE("tillBalances", '[]'::jsonb)) AS till
+        ), '[]'::jsonb),
+        "lastReconciledAt" = NOW()::TEXT
+  $sql$, v_schema);
+
+  EXECUTE format($sql$
+    INSERT INTO %I.audit_trail (
+      id, timestamp, "userId", "userName", action, module, "entityId",
+      description, "ipAddress", "glImpact"
+    ) VALUES (
+      $1, NOW()::TEXT, 'SYSTEM', 'System', 'SYSTEM_GO_LIVE',
+      'System Administration', $2,
+      'Tenant operational demo data purged before real operations.',
+      '127.0.0.1', 'GL balances and branch cash reset to zero'
     )
-    FROM jsonb_array_elements("tillBalances") AS till
-  ),
-  "lastReconciledAt" = NOW()::TEXT;
+    ON CONFLICT (id) DO NOTHING
+  $sql$, v_schema)
+  USING 'AUD-GOLIVE-' || to_char(NOW(), 'YYYYMMDD'), v_org_id;
 
--- ──────────────────────────────────────────────────────────
--- 4. Keep roles intact (do not wipe — needed for RLS)
--- ──────────────────────────────────────────────────────────
--- (no action — roles are structural, not operational data)
+  EXECUTE format('SELECT COUNT(*) FROM %I.members', v_schema) INTO v_members;
+  EXECUTE format('SELECT COUNT(*) FROM %I.transactions', v_schema) INTO v_transactions;
+  EXECUTE format('SELECT COUNT(*) FROM %I.audit_trail', v_schema) INTO v_audit;
 
--- ──────────────────────────────────────────────────────────
--- 5. Keep staff users intact
---    Only remove the demo member-user (if still present)
--- ──────────────────────────────────────────────────────────
-DELETE FROM public.users WHERE email = 'sarah.kamau@barakafarms.co.ke';
-
--- ──────────────────────────────────────────────────────────
--- 6. Insert a system audit event marking the go-live
--- ──────────────────────────────────────────────────────────
-INSERT INTO public.audit_trail (
-  id, timestamp, "userId", "userName",
-  action, module, "entityId", description, "ipAddress", "glImpact"
-) VALUES (
-  'AUD-GOLIVE-' || to_char(NOW(), 'YYYYMMDD'),
-  NOW()::TEXT,
-  'USR-001',
-  'System Administrator',
-  'SYSTEM_GO_LIVE',
-  'System Administration',
-  'INST-001',
-  'Finage OS production go-live: all demo data purged, real operations commenced.',
-  '127.0.0.1',
-  'All GL accounts zeroed — opening balances to be posted by Treasury'
-);
-
-COMMIT;
-
--- ──────────────────────────────────────────────────────────
--- VERIFICATION — run these after the script completes
--- ──────────────────────────────────────────────────────────
-SELECT 'members'     AS table_name, COUNT(*) AS rows FROM public.members
-UNION ALL
-SELECT 'transactions', COUNT(*) FROM public.transactions
-UNION ALL
-SELECT 'audit_trail',  COUNT(*) FROM public.audit_trail
-UNION ALL
-SELECT 'users',        COUNT(*) FROM public.users
-UNION ALL
-SELECT 'branches',     COUNT(*) FROM public.branches
-UNION ALL
-SELECT 'general_ledger', COUNT(*) FROM public.general_ledger;
-
--- Expected result:
---   members       → 0
---   transactions  → 0
---   audit_trail   → 1  (the go-live event)
---   users         → N  (your real staff count)
---   branches      → 5  (branch structure intact)
---   general_ledger → 20 (COA intact, all balances = 0)
+  RAISE NOTICE 'Go-live cleanup complete for org % (schema %): members %, transactions %, audit events %.',
+    v_org_id, v_schema, v_members, v_transactions, v_audit;
+END;
+$$;

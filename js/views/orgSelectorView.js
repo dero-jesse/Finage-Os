@@ -10,6 +10,13 @@ const OrgSelectorView = {
     const orgs = (window.Platform && Platform.getOrganizations()) || [];
     const activeOrgs = orgs.filter(o => o.status === 'active');
     const isSuperuser = window.Platform && Platform.isSuperuser();
+    const escapeHtml = value => String(value || '').replace(/[&<>"']/g, char => ({
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#39;'
+    })[char]);
 
     container.innerHTML = `
       <div style="display:flex;height:100vh;width:100vw;background:
@@ -62,11 +69,24 @@ const OrgSelectorView = {
 
           <!-- Superuser Controls -->
           ${isSuperuser ? `
-            <div style="border-top:1px solid #e2e8f0;padding-top:1rem;display:flex;gap:.75rem;justify-content:center;">
+            <div style="border-top:1px solid #e2e8f0;padding-top:1rem;display:flex;flex-direction:column;gap:.85rem;">
+              ${activeOrgs.length ? `
+                <form id="form-correct-owner-email" data-org-id="${escapeHtml(activeOrgs[0].id)}" style="display:flex;flex-direction:column;gap:.55rem;padding:.85rem;background:rgba(255,255,255,.85);border:1px solid #e2e8f0;border-radius:10px;">
+                  <label for="inp-correct-owner-email" style="font-size:.72rem;font-weight:800;color:#334155;">Correct owner invitation · ${escapeHtml(activeOrgs[0].name)}</label>
+                  <div style="display:flex;gap:.5rem;">
+                    <input id="inp-correct-owner-email" type="email" class="form-control" value="${escapeHtml(activeOrgs[0].superuser_email)}" required style="min-width:0;flex:1;font-size:.78rem;">
+                    <button id="btn-correct-owner-email" type="submit" style="padding:.55rem .8rem;border:1px solid #cbd5e1;border-radius:8px;background:#fff;color:#334155;font-size:.72rem;font-weight:700;cursor:pointer;white-space:nowrap;">Update &amp; Invite</button>
+                  </div>
+                  <button id="btn-owner-temporary-password" type="button" style="align-self:flex-start;padding:.45rem .75rem;border:1px solid #b6ccf5;border-radius:8px;background:#eff6ff;color:#1e40af;font-size:.7rem;font-weight:700;cursor:pointer;">Generate One-Time Password</button>
+                  <div id="owner-email-result" role="status" style="display:none;font-size:.72rem;"></div>
+                </form>
+              ` : ''}
+              <div style="display:flex;gap:.75rem;justify-content:center;">
               <button id="btn-org-setup-wizard"
                 style="padding:.65rem 1.4rem;border-radius:12px;border:2px solid #7c3aed;background:linear-gradient(135deg,#7c3aed,#6d28d9);color:#fff;font-weight:800;font-size:.8rem;cursor:pointer;box-shadow:0 4px 14px rgba(124,58,237,0.3);">
                 🚀 New Organisation Setup
               </button>
+              </div>
             </div>
           ` : ''}
 
@@ -85,14 +105,109 @@ const OrgSelectorView = {
   },
 
   _bindEvents(container, state) {
+    const ownerEmailForm = container.querySelector('#form-correct-owner-email');
+    if (ownerEmailForm) {
+      ownerEmailForm.addEventListener('submit', async event => {
+        event.preventDefault();
+        const input = ownerEmailForm.querySelector('#inp-correct-owner-email');
+        const button = ownerEmailForm.querySelector('#btn-correct-owner-email');
+        const result = ownerEmailForm.querySelector('#owner-email-result');
+        const email = input.value.trim();
+        if (!input.checkValidity()) {
+          input.reportValidity();
+          return;
+        }
+        button.disabled = true;
+        button.textContent = 'Sending…';
+        result.style.display = 'none';
+        try {
+          const response = await Platform.correctOwnerEmail(ownerEmailForm.dataset.orgId, email);
+          result.textContent = `${response.message} Owner email is now ${response.ownerEmail}.`;
+          result.style.color = '#047857';
+          result.style.display = 'block';
+          input.value = response.ownerEmail;
+        } catch (error) {
+          result.textContent = error.message;
+          result.style.color = '#b91c1c';
+          result.style.display = 'block';
+        } finally {
+          button.disabled = false;
+          button.textContent = 'Update & Invite';
+        }
+      });
+
+      const temporaryPasswordButton = ownerEmailForm.querySelector('#btn-owner-temporary-password');
+      temporaryPasswordButton.addEventListener('click', async () => {
+        const result = ownerEmailForm.querySelector('#owner-email-result');
+        temporaryPasswordButton.disabled = true;
+        temporaryPasswordButton.textContent = 'Generating…';
+        result.style.display = 'none';
+        try {
+          const { data, error } = await window.supabase.functions.invoke('provision-organization', {
+            body: { action: 'set-owner-temporary-password', orgId: ownerEmailForm.dataset.orgId }
+          });
+          if (error) {
+            let message = error.message || 'Temporary password generation failed.';
+            if (error.context && typeof error.context.json === 'function') {
+              try {
+                const body = await error.context.json();
+                message = body.error || body.message || message;
+              } catch (_) {}
+            }
+            throw new Error(message);
+          }
+          if (!data?.success || !data.temporaryPassword) throw new Error(data?.error || 'Temporary password was not returned.');
+          const message = document.createElement('div');
+          message.textContent = `One-time password for ${data.ownerEmail}. Provide it directly to the owner; it must be changed at first sign-in.`;
+          message.style.marginBottom = '.45rem';
+          const credentialRow = document.createElement('div');
+          credentialRow.style.cssText = 'display:flex;gap:.4rem;';
+          const credential = document.createElement('input');
+          credential.type = 'password';
+          credential.readOnly = true;
+          credential.autocomplete = 'new-password';
+          credential.value = data.temporaryPassword;
+          credential.setAttribute('aria-label', 'One-time owner password');
+          credential.style.cssText = 'min-width:0;flex:1;font-family:monospace;';
+          const copyButton = document.createElement('button');
+          copyButton.type = 'button';
+          copyButton.textContent = 'Copy';
+          copyButton.style.cssText = 'padding:.35rem .65rem;border:1px solid #93c5fd;border-radius:6px;background:#dbeafe;color:#1e40af;font-weight:700;cursor:pointer;';
+          copyButton.addEventListener('click', async () => {
+            try {
+              await navigator.clipboard.writeText(credential.value);
+              copyButton.textContent = 'Copied';
+            } catch (_) {
+              credential.type = 'text';
+              credential.select();
+              document.execCommand('copy');
+              credential.type = 'password';
+              copyButton.textContent = 'Copied';
+            }
+          });
+          credentialRow.append(credential, copyButton);
+          result.replaceChildren(message, credentialRow);
+          result.style.color = '#1e40af';
+          result.style.display = 'block';
+          temporaryPasswordButton.textContent = 'One-Time Password Generated';
+        } catch (error) {
+          result.textContent = error.message;
+          result.style.color = '#b91c1c';
+          result.style.display = 'block';
+          temporaryPasswordButton.disabled = false;
+          temporaryPasswordButton.textContent = 'Generate One-Time Password';
+        }
+      });
+    }
+
     // Select an org
     container.querySelectorAll('.org-select-card').forEach(card => {
       card.addEventListener('click', () => {
         const orgId = card.dataset.orgId;
         if (window.Platform && Platform.setActiveOrg(orgId)) {
           // Trigger a sync pull for this org then re-render the main app
-          if (window.SupabaseSync && typeof SupabaseSync.pullAll === 'function') {
-            SupabaseSync.pullAll(store.state).catch(e => console.warn('[OrgSelector] sync error:', e));
+          if (window.SupabaseSync && typeof SupabaseSync.init === 'function') {
+            SupabaseSync.init(store).catch(e => console.warn('[OrgSelector] sync error:', e));
           }
           store.state.orgSelectorShown = false;
           store.save();

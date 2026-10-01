@@ -81,7 +81,11 @@
           Mobile Inflow
         </button>
 
-
+        <!-- Org Switcher (shown only to platform superusers with multiple orgs) -->
+        <button id="btn-org-switch" class="header-btn" title="Switch Organisation" style="display:none;"
+          onclick="if(typeof OrgSelectorView!=='undefined'){store.state.orgSelectorShown=true;store.notify();}">
+          🏦 Switch Org
+        </button>
 
         <!-- Secondary Action: Data Input -->
         <button id="btn-open-input-hub" class="btn btn-outline" title="Open the data input hub">
@@ -177,6 +181,9 @@
   <script src="js/views/boardView.js"></script>
 
   <!-- Application Bootstrap -->
+  <script src="js/platform.js"></script>
+  <script src="js/views/orgSelectorView.js"></script>
+  <script src="js/views/setupWizardView.js"></script>
   <script src="js/app.js"></script>
 
 </body>

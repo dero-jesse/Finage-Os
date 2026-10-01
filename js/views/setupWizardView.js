@@ -1,0 +1,604 @@
+/**
+ * Finage OS — Organisation Setup Wizard
+ * Multi-step modal for platform superusers to onboard a new SACCO/MFI.
+ * Steps: 1 Organisation Info → 2 Branches → 3 Chart of Accounts → 4 Staff Users → 5 Review & Provision
+ */
+
+const SetupWizardView = {
+  _step: 1,
+  _totalSteps: 5,
+  _data: {
+    org: {},
+    branches: [],
+    glAccounts: [],
+    staffUsers: [],
+    roles: []
+  },
+  _loading: false,
+  _generatedSql: null,
+
+  // ─── Default GL template (standard SACCO COA) ───────────────────────────
+  _defaultGL: [
+    { code: '1010', name: 'Cash in Hand – Vault', category: 'Asset', type: 'Current', normal: 'Debit',  isContra: false },
+    { code: '1020', name: 'Cash in Hand – Teller Tills', category: 'Asset', type: 'Current', normal: 'Debit', isContra: false },
+    { code: '1040', name: 'Mobile Money Wallet (M-Pesa/Airtel)', category: 'Asset', type: 'Current', normal: 'Debit', isContra: false },
+    { code: '1060', name: 'Bank – Current Account', category: 'Asset', type: 'Current', normal: 'Debit', isContra: false },
+    { code: '1080', name: 'T-Bills & Short-Term Investments', category: 'Asset', type: 'Investment', normal: 'Debit', isContra: false },
+    { code: '1200', name: 'Loan Portfolio – Gross', category: 'Asset', type: 'Loan', normal: 'Debit', isContra: false },
+    { code: '1210', name: 'Loan Loss Provision (Contra)', category: 'Asset', type: 'Contra', normal: 'Credit', isContra: true },
+    { code: '2010', name: 'Member Savings Deposits', category: 'Liability', type: 'Deposit', normal: 'Credit', isContra: false },
+    { code: '2020', name: 'Fixed Deposit Accounts', category: 'Liability', type: 'Deposit', normal: 'Credit', isContra: false },
+    { code: '2030', name: 'DFI Borrowings (External Lines)', category: 'Liability', type: 'Borrowing', normal: 'Credit', isContra: false },
+    { code: '3010', name: 'Share Capital', category: 'Equity', type: 'Capital', normal: 'Credit', isContra: false },
+    { code: '3020', name: 'Retained Surplus', category: 'Equity', type: 'Capital', normal: 'Credit', isContra: false },
+    { code: '4010', name: 'Interest Income – Loans', category: 'Income', type: 'Revenue', normal: 'Credit', isContra: false },
+    { code: '4020', name: 'Fee & Commission Income', category: 'Income', type: 'Revenue', normal: 'Credit', isContra: false },
+    { code: '5010', name: 'Interest Expense – Deposits', category: 'Expense', type: 'Interest', normal: 'Debit', isContra: false },
+    { code: '5020', name: 'Staff Costs', category: 'Expense', type: 'Operating', normal: 'Debit', isContra: false },
+    { code: '5030', name: 'Loan Loss Expense (Provision Charge)', category: 'Expense', type: 'Provision', normal: 'Debit', isContra: false },
+  ],
+
+  // ─── Default Roles ───────────────────────────────────────────────────────
+  _defaultRoles: [
+    { id: 'ROLE-ADMIN',        name: 'System Administrator',            category: 'board',        permissions: ['READ_ALL_MODULES','MANAGE_USERS','REPORTS_ACCESS','POLICY_THRESHOLD_CONFIG','BOARD_ESCALATION_APPROVE','GOVERNANCE_OVERVIEW'] },
+    { id: 'ROLE-BRANCH-MGR',  name: 'Branch Manager / FOSA Supervisor', category: 'front-office', permissions: ['VAULT_RECONCILE','APPROVE_BRANCH_LOAN_TIER1','TELLER_LIMIT_OVERRIDE','AUDIT_TELLER_ACTIVITY','REPORTS_ACCESS'] },
+    { id: 'ROLE-TELLER',       name: 'Teller Desk Officer',             category: 'teller',       permissions: ['POST_COUNTER_TX','VIEW_MEMBER_BALANCE','MANAGE_ASSIGNED_TILL'] },
+    { id: 'ROLE-CREDIT-MAKER', name: 'Credit Origination Officer',      category: 'credit',       permissions: ['ORIGINATE_LOAN_APP','KYC_RISK_SCORING','VIEW_PAR_METRICS'] },
+    { id: 'ROLE-CREDIT-CHECKER','name': 'Head of Credit / Checker',     category: 'credit',       permissions: ['APPROVE_CREDIT_FACILITY','PACING_RELEASE_AUTHORIZE','OVERRIDE_NPA_PROVISION'] },
+    { id: 'ROLE-TREASURY',     name: 'Treasury & Liquidity Officer',    category: 'treasury',     permissions: ['EXECUTE_DFI_DRAWDOWN','RECONCILE_BANKS','PLACE_TBILLS','MODIFY_GL_JOURNAL','REPORTS_ACCESS'] },
+    { id: 'ROLE-AUDITOR',      name: 'Internal Auditor',                category: 'board',        permissions: ['VIEW_AUDIT_LOGS','EXPORT_SASRA_RETURNS','READ_ALL_MODULES','REPORTS_ACCESS'] },
+  ],
+
+  open() {
+    this._step = 1;
+    this._data = {
+      org: {},
+      branches: [{ id: 'br-01', name: 'Head Office', code: 'HQ', tellerCount: 2, vaultLimit: 50000000, tellerCashLimit: 2000000 }],
+      glAccounts: [...this._defaultGL],
+      staffUsers: [],
+      roles: [...this._defaultRoles]
+    };
+    this._generatedSql = null;
+    this._render();
+  },
+
+  _render() {
+    let overlay = document.getElementById('setup-wizard-overlay');
+    if (!overlay) {
+      overlay = document.createElement('div');
+      overlay.id = 'setup-wizard-overlay';
+      document.body.appendChild(overlay);
+    }
+    overlay.innerHTML = this._buildOverlay();
+    this._bindEvents(overlay);
+  },
+
+  _buildOverlay() {
+    const stepTitles = ['Organisation Info', 'Branches', 'Chart of Accounts', 'Staff Users', 'Review & Provision'];
+    const stepIcons  = ['🏦', '🏢', '📊', '👥', '🚀'];
+
+    const progressDots = stepTitles.map((t, i) => {
+      const num = i + 1;
+      const active  = num === this._step ? 'background: linear-gradient(135deg,#10b981,#059669); color:#fff; box-shadow:0 4px 12px rgba(16,185,129,0.4);' : '';
+      const done    = num < this._step  ? 'background:#d1fae5; color:#065f46; border-color:#6ee7b7;' : '';
+      const future  = num > this._step  ? 'background:#f1f5f9; color:#94a3b8; border-color:#e2e8f0;' : '';
+      return `
+        <div style="display:flex;flex-direction:column;align-items:center;gap:4px;flex:1;">
+          <div style="width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:0.8rem;border:2px solid;transition:all .3s;${active||done||future}">${num < this._step ? '✓' : num}</div>
+          <span style="font-size:0.58rem;color:${num===this._step?'#059669':num<this._step?'#065f46':'#94a3b8'};font-weight:${num===this._step?'700':'500'};text-align:center;line-height:1.2;">${t}</span>
+        </div>
+        ${i < stepTitles.length - 1 ? '<div style="flex:1;height:2px;background:' + (num < this._step ? '#6ee7b7' : '#e2e8f0') + ';margin-top:-18px;"></div>' : ''}
+      `;
+    }).join('');
+
+    return `
+      <div style="position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,0.55);backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;padding:1rem;">
+        <div style="background:#fff;border-radius:24px;box-shadow:0 40px 100px rgba(0,0,0,0.2);width:100%;max-width:780px;max-height:90vh;display:flex;flex-direction:column;overflow:hidden;">
+          
+          <!-- Header -->
+          <div style="padding:1.5rem 2rem 1rem;border-bottom:1px solid #f1f5f9;background:linear-gradient(135deg,#f0fdf4,#ecfdf5);">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1.2rem;">
+              <div>
+                <div style="font-size:0.65rem;font-weight:800;color:#059669;text-transform:uppercase;letter-spacing:.1em;">Platform Superuser</div>
+                <h2 style="margin:0;font-size:1.35rem;font-weight:800;color:#064e3b;letter-spacing:-.03em;">${stepIcons[this._step-1]} ${stepTitles[this._step-1]}</h2>
+              </div>
+              <button id="wizard-close" style="background:none;border:none;cursor:pointer;font-size:1.4rem;color:#94a3b8;padding:4px;border-radius:8px;line-height:1;">✕</button>
+            </div>
+            <!-- Progress -->
+            <div style="display:flex;align-items:center;gap:0;">${progressDots}</div>
+          </div>
+
+          <!-- Step Content -->
+          <div id="wizard-step-content" style="flex:1;overflow-y:auto;padding:1.5rem 2rem;">
+            ${this._buildStepContent()}
+          </div>
+
+          <!-- Footer -->
+          <div style="padding:1rem 2rem;border-top:1px solid #f1f5f9;display:flex;align-items:center;justify-content:space-between;gap:1rem;background:#fafafa;">
+            ${this._step > 1 && this._step < this._totalSteps ? `<button id="wizard-back" style="padding:.6rem 1.4rem;border-radius:10px;border:2px solid #e2e8f0;background:#fff;font-weight:700;font-size:.82rem;cursor:pointer;color:#475569;">← Back</button>` : '<div></div>'}
+            <div style="display:flex;gap:.75rem;">
+              ${this._step < this._totalSteps
+                ? `<button id="wizard-next" style="padding:.7rem 2rem;border-radius:12px;border:none;background:linear-gradient(135deg,#10b981,#059669);color:#fff;font-weight:800;font-size:.85rem;cursor:pointer;box-shadow:0 4px 14px rgba(16,185,129,0.35);">Next →</button>`
+                : `<button id="wizard-provision" style="padding:.7rem 2rem;border-radius:12px;border:none;background:linear-gradient(135deg,#7c3aed,#6d28d9);color:#fff;font-weight:800;font-size:.85rem;cursor:pointer;box-shadow:0 4px 14px rgba(124,58,237,0.35);" ${this._loading?'disabled':''}>🚀 ${this._loading ? 'Provisioning...' : 'Provision Organisation'}</button>`
+              }
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+  },
+
+  _buildStepContent() {
+    switch (this._step) {
+      case 1: return this._buildStep1();
+      case 2: return this._buildStep2();
+      case 3: return this._buildStep3();
+      case 4: return this._buildStep4();
+      case 5: return this._buildStep5();
+      default: return '';
+    }
+  },
+
+  // Step 1: Organisation Info
+  _buildStep1() {
+    const o = this._data.org;
+    const input = (id, label, type, placeholder, val, extra='') =>
+      `<div class="form-group"><label class="form-label" style="font-size:.7rem;letter-spacing:.06em;">${label}</label><input type="${type}" id="${id}" class="form-control" placeholder="${placeholder}" value="${val||''}" ${extra}></div>`;
+    const select = (id, label, options, val) =>
+      `<div class="form-group"><label class="form-label" style="font-size:.7rem;letter-spacing:.06em;">${label}</label><select id="${id}" class="form-control">${options.map(op => `<option value="${op.v}" ${op.v===val?'selected':''}>${op.l}</option>`).join('')}</select></div>`;
+    return `
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;">
+        ${input('wiz-org-id',   'Org ID (unique slug, no spaces)', 'text', 'org_finage_ug', o.id, 'style="font-family:monospace;"')}
+        ${input('wiz-org-name', 'Full Legal Name', 'text', 'Finage Apex SACCO Ltd', o.name)}
+        ${select('wiz-org-type', 'Institution Type', [
+          {v:'SACCO', l:'SACCO (Savings & Credit Co-op)'}, {v:'MFI', l:'Microfinance Institution'}, {v:'Bank', l:'Commercial Bank'}
+        ], o.type || 'SACCO')}
+        ${input('wiz-reg-number', 'Registration Number', 'text', 'REG/XXXXXXXXX/2020', o.regNumber)}
+        ${select('wiz-country', 'Country', [
+          {v:'UG',l:'Uganda'},{v:'KE',l:'Kenya'},{v:'TZ',l:'Tanzania'},{v:'RW',l:'Rwanda'}
+        ], o.country || 'UG')}
+        ${select('wiz-currency', 'Base Currency', [
+          {v:'UGX',l:'UGX – Uganda Shilling'},{v:'KES',l:'KES – Kenya Shilling'},{v:'TZS',l:'TZS – Tanzania Shilling'},{v:'RWF',l:'RWF – Rwanda Franc'}
+        ], o.baseCurrency || 'UGX')}
+        ${select('wiz-regulatory-body', 'Regulatory Body', [
+          {v:'BOU',l:'BOU – Bank of Uganda'},{v:'CBK',l:'CBK – Central Bank of Kenya'},{v:'BOT',l:'BOT – Bank of Tanzania'},{v:'BNR',l:'BNR – National Bank of Rwanda'},{v:'SASRA',l:'SASRA (Kenya SACCO regulator)'}
+        ], o.regulatoryBody || 'BOU')}
+        ${input('wiz-financial-year', 'Current Financial Year', 'text', '2026', o.financialYear || '2026')}
+        ${input('wiz-min-liquidity', 'Min Liquidity Ratio (%)', 'number', '15', o.minLiquidityRatio || '15')}
+        ${input('wiz-superuser-email', 'Org Superuser Email', 'email', 'admin@yourorg.co.ug', o.superuserEmail)}
+      </div>
+    `;
+  },
+
+  // Step 2: Branches
+  _buildStep2() {
+    const rows = this._data.branches.map((b, i) => `
+      <tr>
+        <td><input class="form-control form-control-sm" style="font-size:.75rem;" data-field="name" data-idx="${i}" value="${b.name}"></td>
+        <td><input class="form-control form-control-sm" style="font-size:.75rem;font-family:monospace;" data-field="code" data-idx="${i}" value="${b.code}"></td>
+        <td><input type="number" class="form-control form-control-sm" style="font-size:.75rem;" data-field="tellerCount" data-idx="${i}" value="${b.tellerCount||0}"></td>
+        <td><input type="number" class="form-control form-control-sm" style="font-size:.75rem;" data-field="vaultLimit" data-idx="${i}" value="${b.vaultLimit||0}"></td>
+        <td><input type="number" class="form-control form-control-sm" style="font-size:.75rem;" data-field="tellerCashLimit" data-idx="${i}" value="${b.tellerCashLimit||0}"></td>
+        <td><button class="btn btn-sm" style="background:rgba(239,68,68,.08);color:#dc2626;border:none;padding:3px 8px;border-radius:6px;cursor:pointer;" data-remove-branch="${i}">✕</button></td>
+      </tr>
+    `).join('');
+
+    return `
+      <div style="margin-bottom:.75rem;display:flex;align-items:center;justify-content:space-between;">
+        <p style="margin:0;font-size:.82rem;color:#475569;">Define all branches / service points. The first branch is typically Head Office.</p>
+        <button id="btn-add-branch" style="padding:.4rem 1rem;border-radius:8px;border:2px solid #10b981;background:#f0fdf4;color:#059669;font-weight:700;font-size:.75rem;cursor:pointer;">+ Add Branch</button>
+      </div>
+      <div style="overflow-x:auto;border-radius:10px;border:1px solid #e2e8f0;">
+        <table style="width:100%;border-collapse:collapse;font-size:.78rem;">
+          <thead>
+            <tr style="background:#f8fafc;">
+              <th style="padding:.5rem .75rem;text-align:left;font-size:.67rem;color:#64748b;font-weight:800;text-transform:uppercase;letter-spacing:.06em;">Branch Name</th>
+              <th style="padding:.5rem .75rem;text-align:left;font-size:.67rem;color:#64748b;font-weight:800;text-transform:uppercase;letter-spacing:.06em;">Code</th>
+              <th style="padding:.5rem .75rem;text-align:left;font-size:.67rem;color:#64748b;font-weight:800;text-transform:uppercase;letter-spacing:.06em;">Tellers</th>
+              <th style="padding:.5rem .75rem;text-align:left;font-size:.67rem;color:#64748b;font-weight:800;text-transform:uppercase;letter-spacing:.06em;">Vault Limit</th>
+              <th style="padding:.5rem .75rem;text-align:left;font-size:.67rem;color:#64748b;font-weight:800;text-transform:uppercase;letter-spacing:.06em;">Teller Cash Limit</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="branches-tbody">${rows}</tbody>
+        </table>
+      </div>
+    `;
+  },
+
+  // Step 3: Chart of Accounts
+  _buildStep3() {
+    const rows = this._data.glAccounts.map((g, i) => `
+      <tr style="border-bottom:1px solid #f1f5f9;">
+        <td style="padding:.4rem .6rem;"><input class="form-control form-control-sm" style="font-size:.72rem;font-family:monospace;width:65px;" data-glfield="code" data-idx="${i}" value="${g.code}"></td>
+        <td style="padding:.4rem .6rem;"><input class="form-control form-control-sm" style="font-size:.72rem;min-width:180px;" data-glfield="name" data-idx="${i}" value="${g.name}"></td>
+        <td style="padding:.4rem .6rem;">
+          <select class="form-control form-control-sm" style="font-size:.72rem;" data-glfield="category" data-idx="${i}">
+            ${['Asset','Liability','Equity','Income','Expense'].map(c=>`<option ${g.category===c?'selected':''}>${c}</option>`).join('')}
+          </select>
+        </td>
+        <td style="padding:.4rem .6rem;">
+          <select class="form-control form-control-sm" style="font-size:.72rem;" data-glfield="normal" data-idx="${i}">
+            <option ${g.normal==='Debit'?'selected':''}>Debit</option>
+            <option ${g.normal==='Credit'?'selected':''}>Credit</option>
+          </select>
+        </td>
+        <td style="padding:.4rem .6rem;text-align:center;">
+          <input type="checkbox" data-glfield="isContra" data-idx="${i}" ${g.isContra?'checked':''}>
+        </td>
+        <td style="padding:.4rem .6rem;">
+          <button style="background:rgba(239,68,68,.08);color:#dc2626;border:none;padding:2px 7px;border-radius:5px;cursor:pointer;font-size:.72rem;" data-remove-gl="${i}">✕</button>
+        </td>
+      </tr>
+    `).join('');
+
+    return `
+      <div style="margin-bottom:.75rem;display:flex;align-items:center;justify-content:space-between;">
+        <p style="margin:0;font-size:.82rem;color:#475569;">Standard SACCO Chart of Accounts (pre-loaded). Add or remove accounts as needed.</p>
+        <button id="btn-add-gl" style="padding:.4rem 1rem;border-radius:8px;border:2px solid #10b981;background:#f0fdf4;color:#059669;font-weight:700;font-size:.75rem;cursor:pointer;">+ Add GL Account</button>
+      </div>
+      <div style="overflow-x:auto;max-height:380px;overflow-y:auto;border-radius:10px;border:1px solid #e2e8f0;">
+        <table style="width:100%;border-collapse:collapse;">
+          <thead style="position:sticky;top:0;background:#f8fafc;z-index:1;">
+            <tr>
+              <th style="padding:.5rem .6rem;text-align:left;font-size:.64rem;color:#64748b;font-weight:800;text-transform:uppercase;">Code</th>
+              <th style="padding:.5rem .6rem;text-align:left;font-size:.64rem;color:#64748b;font-weight:800;text-transform:uppercase;">Account Name</th>
+              <th style="padding:.5rem .6rem;text-align:left;font-size:.64rem;color:#64748b;font-weight:800;text-transform:uppercase;">Category</th>
+              <th style="padding:.5rem .6rem;text-align:left;font-size:.64rem;color:#64748b;font-weight:800;text-transform:uppercase;">Normal</th>
+              <th style="padding:.5rem .6rem;text-align:left;font-size:.64rem;color:#64748b;font-weight:800;text-transform:uppercase;">Contra</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="gl-tbody">${rows}</tbody>
+        </table>
+      </div>
+    `;
+  },
+
+  // Step 4: Staff Users
+  _buildStep4() {
+    const branchOptions = this._data.branches.map(b =>
+      `<option value="${b.id}">${b.name}</option>`
+    ).join('');
+    const roleOptions = this._data.roles.map(r =>
+      `<option value="${r.id}">${r.name}</option>`
+    ).join('');
+
+    const rows = this._data.staffUsers.map((u, i) => `
+      <tr style="border-bottom:1px solid #f1f5f9;">
+        <td style="padding:.4rem .5rem;"><input class="form-control form-control-sm" style="font-size:.72rem;" data-usrfield="name" data-idx="${i}" value="${u.name}"></td>
+        <td style="padding:.4rem .5rem;"><input type="email" class="form-control form-control-sm" style="font-size:.72rem;" data-usrfield="email" data-idx="${i}" value="${u.email}"></td>
+        <td style="padding:.4rem .5rem;">
+          <select class="form-control form-control-sm" style="font-size:.72rem;" data-usrfield="roleId" data-idx="${i}">
+            ${roleOptions}
+          </select>
+        </td>
+        <td style="padding:.4rem .5rem;">
+          <select class="form-control form-control-sm" style="font-size:.72rem;" data-usrfield="branchId" data-idx="${i}">
+            ${branchOptions}
+          </select>
+        </td>
+        <td style="padding:.4rem .5rem;">
+          <button style="background:rgba(239,68,68,.08);color:#dc2626;border:none;padding:2px 7px;border-radius:5px;cursor:pointer;font-size:.72rem;" data-remove-user="${i}">✕</button>
+        </td>
+      </tr>
+    `).join('');
+
+    return `
+      <div style="margin-bottom:.75rem;display:flex;align-items:center;justify-content:space-between;">
+        <p style="margin:0;font-size:.82rem;color:#475569;">Add initial staff users. They'll receive Supabase Auth invites to set passwords.</p>
+        <button id="btn-add-user" style="padding:.4rem 1rem;border-radius:8px;border:2px solid #10b981;background:#f0fdf4;color:#059669;font-weight:700;font-size:.75rem;cursor:pointer;">+ Add Staff User</button>
+      </div>
+      ${this._data.staffUsers.length === 0 ? `
+        <div style="text-align:center;padding:2rem;border:2px dashed #e2e8f0;border-radius:12px;color:#94a3b8;font-size:.82rem;">
+          <div style="font-size:2rem;margin-bottom:.5rem;">👥</div>
+          Click "+ Add Staff User" to add the first staff member.<br>
+          <span style="font-size:.72rem;">You can also add users later via User Management.</span>
+        </div>
+      ` : `
+        <div style="overflow-x:auto;border-radius:10px;border:1px solid #e2e8f0;">
+          <table style="width:100%;border-collapse:collapse;">
+            <thead style="background:#f8fafc;">
+              <tr>
+                <th style="padding:.5rem;text-align:left;font-size:.64rem;color:#64748b;font-weight:800;text-transform:uppercase;">Name</th>
+                <th style="padding:.5rem;text-align:left;font-size:.64rem;color:#64748b;font-weight:800;text-transform:uppercase;">Email</th>
+                <th style="padding:.5rem;text-align:left;font-size:.64rem;color:#64748b;font-weight:800;text-transform:uppercase;">Role</th>
+                <th style="padding:.5rem;text-align:left;font-size:.64rem;color:#64748b;font-weight:800;text-transform:uppercase;">Branch</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>
+      `}
+    `;
+  },
+
+  // Step 5: Review & Provision
+  _buildStep5() {
+    const o = this._data.org;
+    const pill = (label, val, color='#059669') =>
+      `<div style="display:flex;flex-direction:column;gap:2px;padding:.6rem .9rem;background:#f8fafc;border-radius:10px;border:1px solid #e2e8f0;">
+        <span style="font-size:.6rem;color:#94a3b8;font-weight:700;text-transform:uppercase;letter-spacing:.06em;">${label}</span>
+        <span style="font-size:.82rem;font-weight:700;color:${color};">${val}</span>
+      </div>`;
+
+    return `
+      <div style="display:flex;flex-direction:column;gap:1.25rem;">
+        <div style="background:linear-gradient(135deg,#f0fdf4,#ecfdf5);border:1px solid #a7f3d0;border-radius:14px;padding:1.2rem 1.4rem;">
+          <h3 style="margin:0 0 .8rem;font-size:1rem;color:#064e3b;font-weight:800;">🏦 ${o.name || '(no name)'}</h3>
+          <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:.5rem;">
+            ${pill('Type', o.type || '—')}
+            ${pill('Country', o.country || '—')}
+            ${pill('Currency', o.baseCurrency || '—')}
+            ${pill('Regulatory Body', o.regulatoryBody || '—')}
+            ${pill('Min Liquidity', (o.minLiquidityRatio || '15') + '%')}
+            ${pill('Financial Year', o.financialYear || '—')}
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:.75rem;">
+          <div style="text-align:center;padding:1rem;background:#f0f9ff;border-radius:12px;border:1px solid #bae6fd;">
+            <div style="font-size:1.8rem;font-weight:800;color:#0369a1;">${this._data.branches.length}</div>
+            <div style="font-size:.72rem;color:#0369a1;font-weight:700;">Branches</div>
+          </div>
+          <div style="text-align:center;padding:1rem;background:#f0fdf4;border-radius:12px;border:1px solid #a7f3d0;">
+            <div style="font-size:1.8rem;font-weight:800;color:#059669;">${this._data.glAccounts.length}</div>
+            <div style="font-size:.72rem;color:#059669;font-weight:700;">GL Accounts</div>
+          </div>
+          <div style="text-align:center;padding:1rem;background:#fdf4ff;border-radius:12px;border:1px solid #e9d5ff;">
+            <div style="font-size:1.8rem;font-weight:800;color:#7c3aed;">${this._data.staffUsers.length}</div>
+            <div style="font-size:.72rem;color:#7c3aed;font-weight:700;">Staff Users</div>
+          </div>
+        </div>
+
+        ${this._generatedSql ? `
+          <div style="background:#1e293b;border-radius:12px;padding:1rem;max-height:200px;overflow-y:auto;">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.5rem;">
+              <span style="font-size:.7rem;color:#94a3b8;font-weight:700;text-transform:uppercase;letter-spacing:.06em;">Generated SQL (${o.id}.sql)</span>
+              <button id="btn-download-sql" style="padding:.3rem .8rem;border-radius:6px;border:1px solid #475569;background:#334155;color:#94a3b8;font-size:.68rem;cursor:pointer;font-weight:600;">⬇ Download</button>
+            </div>
+            <pre style="font-family:monospace;font-size:.65rem;color:#a3e635;margin:0;line-height:1.6;">${this._generatedSql.replace(/</g,'&lt;').replace(/>/g,'&gt;').slice(0,2000)}${this._generatedSql.length > 2000 ? '\n... (truncated)' : ''}</pre>
+          </div>
+          <div style="background:#f0fdf4;border:1px solid #a7f3d0;border-radius:12px;padding:1rem;font-size:.82rem;color:#065f46;">
+            <b>✅ Organisation provisioned successfully!</b> The schema has been created in Supabase and the SQL file is ready for download. Staff users can now be invited via Supabase Authentication.
+          </div>
+        ` : `
+          <div style="background:#fffbeb;border:1px solid #fbbf24;border-radius:12px;padding:1rem;font-size:.82rem;color:#92400e;">
+            <b>⚠️ Ready to provision.</b> Clicking "Provision Organisation" will:<br>
+            • Create a dedicated PostgreSQL schema in Supabase<br>
+            • Seed roles, branches, GL accounts, and staff users<br>
+            • Generate a dedicated SQL file for version control<br>
+            • Activate this organisation for login
+          </div>
+        `}
+
+        <div id="wizard-error" style="display:none;background:rgba(220,38,38,.07);border:1px solid rgba(220,38,38,.3);border-radius:10px;padding:.8rem 1rem;font-size:.8rem;color:#dc2626;font-weight:600;"></div>
+      </div>
+    `;
+  },
+
+  // ─── Event Binding ───────────────────────────────────────────────────────
+  _bindEvents(overlay) {
+    // Close
+    const closeBtn = overlay.querySelector('#wizard-close');
+    if (closeBtn) closeBtn.addEventListener('click', () => overlay.remove());
+
+    // Next
+    const nextBtn = overlay.querySelector('#wizard-next');
+    if (nextBtn) nextBtn.addEventListener('click', () => this._onNext(overlay));
+
+    // Back
+    const backBtn = overlay.querySelector('#wizard-back');
+    if (backBtn) backBtn.addEventListener('click', () => { this._step--; this._render(); });
+
+    // Provision
+    const provBtn = overlay.querySelector('#wizard-provision');
+    if (provBtn) provBtn.addEventListener('click', () => this._onProvision(overlay));
+
+    // Step 2: branch table edits
+    const branchesTbody = overlay.querySelector('#branches-tbody');
+    if (branchesTbody) {
+      branchesTbody.addEventListener('input', e => {
+        const el = e.target;
+        const idx = parseInt(el.dataset.idx);
+        const field = el.dataset.field;
+        if (field !== undefined && !isNaN(idx)) {
+          this._data.branches[idx][field] = el.type === 'number' ? parseFloat(el.value) : el.value;
+        }
+      });
+      branchesTbody.addEventListener('click', e => {
+        const btn = e.target.closest('[data-remove-branch]');
+        if (btn) {
+          this._data.branches.splice(parseInt(btn.dataset.removeBranch), 1);
+          this._render();
+        }
+      });
+    }
+
+    const addBranchBtn = overlay.querySelector('#btn-add-branch');
+    if (addBranchBtn) {
+      addBranchBtn.addEventListener('click', () => {
+        const idx = this._data.branches.length + 1;
+        this._data.branches.push({ id: 'br-0' + idx, name: 'New Branch', code: 'BR' + idx, tellerCount: 1, vaultLimit: 10000000, tellerCashLimit: 1000000 });
+        this._render();
+      });
+    }
+
+    // Step 3: GL table edits
+    const glTbody = overlay.querySelector('#gl-tbody');
+    if (glTbody) {
+      glTbody.addEventListener('change', e => {
+        const el = e.target;
+        const idx = parseInt(el.dataset.idx);
+        const field = el.dataset.glfield;
+        if (field !== undefined && !isNaN(idx)) {
+          this._data.glAccounts[idx][field] = el.type === 'checkbox' ? el.checked : el.value;
+        }
+      });
+      glTbody.addEventListener('input', e => {
+        const el = e.target;
+        const idx = parseInt(el.dataset.idx);
+        const field = el.dataset.glfield;
+        if (field !== undefined && !isNaN(idx) && el.type !== 'checkbox') {
+          this._data.glAccounts[idx][field] = el.value;
+        }
+      });
+      glTbody.addEventListener('click', e => {
+        const btn = e.target.closest('[data-remove-gl]');
+        if (btn) {
+          this._data.glAccounts.splice(parseInt(btn.dataset.removeGl), 1);
+          this._render();
+        }
+      });
+    }
+
+    const addGlBtn = overlay.querySelector('#btn-add-gl');
+    if (addGlBtn) {
+      addGlBtn.addEventListener('click', () => {
+        this._data.glAccounts.push({ code: '9' + this._data.glAccounts.length, name: 'New Account', category: 'Asset', type: '', normal: 'Debit', isContra: false });
+        this._render();
+      });
+    }
+
+    // Step 4: user table edits
+    const addUserBtn = overlay.querySelector('#btn-add-user');
+    if (addUserBtn) {
+      addUserBtn.addEventListener('click', () => {
+        const idx = this._data.staffUsers.length + 1;
+        const firstBranch = this._data.branches[0] || {};
+        this._data.staffUsers.push({
+          id: 'USR-' + String(idx).padStart(3, '0'),
+          name: 'Staff Member ' + idx,
+          email: 'staff' + idx + '@' + (this._data.org.id || 'org') + '.com',
+          roles: [this._data.roles[2] ? this._data.roles[2].id : 'ROLE-TELLER'],
+          roleId: this._data.roles[2] ? this._data.roles[2].id : 'ROLE-TELLER',
+          branchId: firstBranch.id || 'br-01',
+          branchName: firstBranch.name || 'Head Office',
+          singleApprovalLimit: 5000000,
+          dailyApprovalLimit: 25000000
+        });
+        this._render();
+      });
+    }
+
+    // User table tbody
+    const usrContainer = overlay.querySelector('tbody:not(#branches-tbody):not(#gl-tbody)');
+    if (usrContainer) {
+      usrContainer.addEventListener('input', e => {
+        const el = e.target;
+        const idx = parseInt(el.dataset.idx);
+        const field = el.dataset.usrfield;
+        if (field !== undefined && !isNaN(idx)) this._data.staffUsers[idx][field] = el.value;
+      });
+      usrContainer.addEventListener('change', e => {
+        const el = e.target;
+        const idx = parseInt(el.dataset.idx);
+        const field = el.dataset.usrfield;
+        if (field !== undefined && !isNaN(idx)) {
+          this._data.staffUsers[idx][field] = el.value;
+          if (field === 'branchId') {
+            const branch = this._data.branches.find(b => b.id === el.value);
+            if (branch) this._data.staffUsers[idx].branchName = branch.name;
+          }
+          if (field === 'roleId') {
+            this._data.staffUsers[idx].roles = [el.value];
+          }
+        }
+      });
+      usrContainer.addEventListener('click', e => {
+        const btn = e.target.closest('[data-remove-user]');
+        if (btn) {
+          this._data.staffUsers.splice(parseInt(btn.dataset.removeUser), 1);
+          this._render();
+        }
+      });
+    }
+
+    // Download SQL
+    const dlBtn = overlay.querySelector('#btn-download-sql');
+    if (dlBtn) {
+      dlBtn.addEventListener('click', () => {
+        if (!this._generatedSql) return;
+        const blob = new Blob([this._generatedSql], { type: 'text/plain' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = (this._data.org.id || 'org') + '_seed.sql';
+        a.click();
+      });
+    }
+  },
+
+  // ─── Navigation ─────────────────────────────────────────────────────────
+  _onNext(overlay) {
+    // Collect current step data before moving
+    if (this._step === 1) {
+      if (!this._collectStep1(overlay)) return;
+    }
+    this._step++;
+    this._render();
+  },
+
+  _collectStep1(overlay) {
+    const get = id => (overlay.querySelector('#' + id) || {}).value;
+    const o = {
+      id:              get('wiz-org-id').trim().toLowerCase().replace(/[^a-z0-9_]/g, '_'),
+      name:            get('wiz-org-name').trim(),
+      type:            get('wiz-org-type'),
+      regNumber:       get('wiz-reg-number').trim(),
+      country:         get('wiz-country'),
+      baseCurrency:    get('wiz-currency'),
+      regulatoryBody:  get('wiz-regulatory-body'),
+      financialYear:   get('wiz-financial-year'),
+      minLiquidityRatio: parseFloat(get('wiz-min-liquidity')) || 15,
+      superuserEmail:  get('wiz-superuser-email').trim()
+    };
+
+    if (!o.id || !o.name || !o.superuserEmail) {
+      if (App && App.showToast) App.showToast('Org ID, Legal Name, and Superuser Email are required.', 'danger');
+      return false;
+    }
+    this._data.org = o;
+    return true;
+  },
+
+  async _onProvision(overlay) {
+    if (this._loading) return;
+    const errEl = overlay.querySelector('#wizard-error');
+
+    // Resolve user IDs for staff (ensure roles array is set)
+    this._data.staffUsers.forEach(u => {
+      if (!u.roles || u.roles.length === 0) u.roles = [u.roleId || 'ROLE-TELLER'];
+    });
+
+    this._loading = true;
+    const btn = overlay.querySelector('#wizard-provision');
+    if (btn) { btn.disabled = true; btn.textContent = '⏳ Provisioning...'; }
+    if (errEl) errEl.style.display = 'none';
+
+    try {
+      const result = await Platform.provisionOrg({
+        ...this._data.org,
+        branches: this._data.branches,
+        roles: this._data.roles,
+        glAccounts: this._data.glAccounts,
+        staffUsers: this._data.staffUsers
+      });
+
+      this._generatedSql = result.sqlContent;
+      if (App && App.showToast) App.showToast('Organisation "' + this._data.org.name + '" provisioned successfully!', 'success');
+      // Re-render step 5 to show the success state + SQL preview
+      this._render();
+
+    } catch (e) {
+      if (errEl) {
+        errEl.textContent = 'Provisioning failed: ' + e.message;
+        errEl.style.display = 'block';
+      }
+      console.error('[SetupWizard] Provision error:', e);
+    } finally {
+      this._loading = false;
+    }
+  }
+};
+
+window.SetupWizardView = SetupWizardView;

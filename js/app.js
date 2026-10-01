@@ -128,10 +128,20 @@ const App = {
         document.querySelector('.top-header').style.display = 'none';
         if (this.tickerBar) this.tickerBar.style.display = 'none';
         LoginView.render(this.viewport, state);
+      } else if (state.isAuthenticated && this._needsOrgSelection()) {
+        // Multi-org: show org picker before main app
+        document.querySelector('.top-header').style.display = 'none';
+        if (this.tickerBar) this.tickerBar.style.display = 'none';
+        if (typeof OrgSelectorView !== 'undefined') {
+          OrgSelectorView.render(this.viewport, state);
+        }
       } else {
         document.querySelector('.top-header').style.display = 'flex';
         if (this.tickerBar) this.tickerBar.style.display = 'flex';
         
+        // Show org switcher button if superuser
+        this._updateOrgSwitcherBtn();
+
         switch (state.currentRole) {
           case 'front-office':
             BranchView.render(this.viewport, state);
@@ -174,6 +184,38 @@ const App = {
       if (typeof AiWidgetView !== 'undefined') {
         AiWidgetView.render(this.aiWidgetMount, state);
       }
+    }
+  },
+
+  // Determine if the user still needs to pick an org
+  _needsOrgSelection() {
+    if (!window.Platform) return false;
+    // Explicit switch request
+    if (store.state.orgSelectorShown) return true;
+    const orgs = Platform.getOrganizations();
+    if (!orgs || orgs.length === 0) {
+      // If no orgs loaded yet, don't block (might still be loading)
+      return false;
+    }
+    const activeOrgs = orgs.filter(o => o.status === 'active');
+    if (activeOrgs.length <= 1) return false; // Auto-selected or none
+    // Multiple orgs — need explicit selection
+    return !Platform.context.currentOrgId;
+  },
+
+  _updateOrgSwitcherBtn() {
+    if (!window.Platform) return;
+    let btn = document.getElementById('btn-org-switch');
+    if (!btn) return;
+    const org = Platform.getActiveOrg();
+    if (org) {
+      btn.textContent = '🏦 ' + (org.name.split(' ')[0]);
+      btn.style.display = 'flex';
+    } else if (Platform.isSuperuser()) {
+      btn.textContent = '🏦 Select Org';
+      btn.style.display = 'flex';
+    } else {
+      btn.style.display = 'none';
     }
   },
 
@@ -423,7 +465,20 @@ document.addEventListener('DOMContentLoaded', async () => {
   // 2. Immediate UI render from local operational state (0ms latency)
   App.init();
 
-  // 3. Initialize Supabase sync protocol in background
+  // 3. Initialize Platform multi-org context manager
+  if (window.Platform) {
+    try {
+      await Platform.init();
+      // If org was resolved, patch store institution info
+      if (Platform.getActiveOrg()) {
+        store.notify();
+      }
+    } catch (e) {
+      console.warn('[Platform] init error:', e.message);
+    }
+  }
+
+  // 4. Initialize Supabase sync protocol in background
   if (window.SupabaseSync && typeof window.SupabaseSync.init === 'function') {
     try {
       await window.SupabaseSync.init(store);

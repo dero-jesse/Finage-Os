@@ -909,6 +909,57 @@ class FinageStore {
     }
   }
 
+  saveLocal() {
+    localStorage.setItem(this.storageKey, JSON.stringify(this.state));
+    this.notify();
+  }
+
+  prepareTenantState(schemaName, forceClean = false) {
+    const activeSchemaKey = 'finage_active_data_schema';
+    const previousSchema = localStorage.getItem(activeSchemaKey);
+    const localDataKeys = [
+      'ledger', 'trialBalanceExceptions', 'smsAlerts', 'channels', 'workflowTasks',
+      'bankAccounts', 'shortTermInvestments', 'depositLiabilities', 'maturityBuckets',
+      'externalFacilities', 'operatingExpenses', 'portfolioQuality', 'disbursementQueue',
+      'stressTesting', 'alerts', 'npaSummary'
+    ];
+
+    const currentData = Object.fromEntries(localDataKeys.map(key => [key, this.state[key]]));
+    if (previousSchema && previousSchema !== schemaName) {
+      const previousData = currentData;
+      localStorage.setItem(`finage_tenant_modules_${previousSchema}`, JSON.stringify(previousData));
+    }
+
+    const cleanState = this.getCleanState();
+    let savedTenantData = previousSchema === schemaName ? currentData : null;
+    if (!forceClean && previousSchema !== schemaName) {
+      try {
+        savedTenantData = JSON.parse(localStorage.getItem(`finage_tenant_modules_${schemaName}`) || 'null');
+      } catch (_) {}
+    } else {
+      localStorage.removeItem(`finage_tenant_modules_${schemaName}`);
+    }
+
+    localDataKeys.forEach(key => {
+      const value = savedTenantData && Object.prototype.hasOwnProperty.call(savedTenantData, key)
+        ? savedTenantData[key]
+        : cleanState[key];
+      this.state[key] = JSON.parse(JSON.stringify(value));
+    });
+
+    this.state.roles = [];
+    this.state.users = [];
+    this.state.branches = [];
+    this.state.members = [];
+    this.state.generalLedger = [];
+    this.state.transactions = [];
+    this.state.recentTransactions = [];
+    this.state.auditTrail = [];
+    this.state.selectedMemberId = null;
+    localStorage.setItem(activeSchemaKey, schemaName);
+    localStorage.setItem(this.storageKey, JSON.stringify(this.state));
+  }
+
   // Persist state without triggering a full view re-render.
   // Use for high-frequency teller operations so the member workspace doesn't reset.
   saveQuiet(...dirtyKeys) {
@@ -1755,9 +1806,17 @@ class FinageStore {
     base.workflowTasks = [];
     base.auditTrail = [];
     base.transactions = [];
+    base.recentTransactions = [];
+    base.ledger = [];
+    base.trialBalanceExceptions = [];
+    base.smsAlerts = [];
     base.disbursementQueue = [];
     base.shortTermInvestments = [];
-    base.operatingExpenses = base.operatingExpenses.map(op => ({ ...op, monthlyAmount: 0 }));
+    base.externalFacilities = [];
+    base.operatingExpenses = [];
+    base.bankAccounts = [];
+    base.channels = [];
+    base.alerts = [];
     
     // Zero out ledgers and accounts
     base.generalLedger = base.generalLedger.map(gl => ({ ...gl, balance: 0 }));
@@ -1783,15 +1842,33 @@ class FinageStore {
     };
     base.portfolioQuality = {
       totalGrossLoanPortfolio: 0, activeBorrowers: 0, currentPerformingPct: 0, par30Pct: 0, par60Pct: 0, par90Pct: 0, historicalRepaymentEfficiency: 0,
-      branchBreakdown: base.branches.map(b => ({ branchName: b.name, portfolio: 0, par30: 0, par90: 0, repaymentRate: 0 }))
+      branchBreakdown: []
     };
     
     return base;
   }
 
   resetState() {
+    const schemaName = window.Platform?.context?.currentOrgSchema;
+    if (schemaName) {
+      this.prepareTenantState(schemaName, true);
+      const activeOrg = window.Platform.getActiveOrg();
+      if (activeOrg) {
+        this.state.institution.name = activeOrg.name;
+        this.state.institution.type = activeOrg.type;
+        this.state.institution.baseCurrency = activeOrg.base_currency || 'UGX';
+        this.state.institution.financialYear = activeOrg.financial_year || '2026';
+      }
+      this.saveLocal();
+      if (window.SupabaseSync) {
+        window.SupabaseSync.init(this).catch(error => console.warn('[Store] Tenant refresh failed:', error));
+      }
+      return 'tenant';
+    }
+
     this.state = this.getDefaultState();
     this.save();
+    return 'demo';
   }
 }
 

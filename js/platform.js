@@ -76,6 +76,9 @@ const Platform = {
     this.context.currentOrg = org;
     localStorage.setItem('finage_active_org_id', org.id);
     if (window.store) {
+      if (typeof store.prepareTenantState === 'function') {
+        store.prepareTenantState(org.schema_name);
+      }
       store.state.institution.name = org.name;
       store.state.institution.type = org.type;
       store.state.institution.baseCurrency = org.base_currency || 'UGX';
@@ -83,6 +86,7 @@ const Platform = {
       store.state.institution.regulatoryBody = org.regulatory_body || '';
       store.state.institution.orgId = org.id;
       store.state.institution.schemaName = org.schema_name;
+      store.state.institution.setupCompleted = org.setup_completed !== false;
     }
     console.log('[Platform] Active org: ' + org.name + ' (schema: ' + org.schema_name + ')');
     return true;

@@ -26,12 +26,16 @@ CREATE TABLE IF NOT EXISTS public.organizations (
     logo_url         TEXT,
     status           TEXT NOT NULL DEFAULT 'pending_setup',
     -- pending_setup | active | suspended | archived
+    setup_completed  BOOLEAN NOT NULL DEFAULT true,
     schema_name      TEXT UNIQUE,               -- 'org_finage_ug' — the PG schema
     superuser_email  TEXT NOT NULL,
     created_at       TIMESTAMPTZ DEFAULT NOW(),
     activated_at     TIMESTAMPTZ,
     created_by       UUID REFERENCES auth.users(id)
 );
+
+ALTER TABLE public.organizations
+    ADD COLUMN IF NOT EXISTS setup_completed BOOLEAN NOT NULL DEFAULT true;
 
 -- ============================================================
 -- PLATFORM TABLE: platform_superusers
@@ -271,6 +275,30 @@ BEGIN
             "glImpact" TEXT
         )', v_schema);
 
+    -- Import batches and source-row archive for full legacy migrations
+    EXECUTE format('
+        CREATE TABLE IF NOT EXISTS %I.migration_batches (
+            id TEXT PRIMARY KEY,
+            source_files JSONB NOT NULL DEFAULT ''[]''::JSONB,
+            row_counts JSONB NOT NULL DEFAULT ''{}''::JSONB,
+            control_totals JSONB NOT NULL DEFAULT ''{}''::JSONB,
+            status TEXT NOT NULL DEFAULT ''completed'',
+            imported_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+            imported_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )', v_schema);
+
+    EXECUTE format('
+        CREATE TABLE IF NOT EXISTS %I.migration_records (
+            batch_id TEXT NOT NULL REFERENCES %I.migration_batches(id) ON DELETE CASCADE,
+            id TEXT NOT NULL,
+            record_type TEXT NOT NULL,
+            source_file TEXT NOT NULL,
+            source_row INTEGER NOT NULL,
+            payload JSONB NOT NULL,
+            imported_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            PRIMARY KEY (batch_id, id)
+        )', v_schema, v_schema);
+
     -- Auto-link trigger for new auth users into this org's users table
     EXECUTE format('
         CREATE OR REPLACE FUNCTION %I.link_auth_to_org_user()
@@ -322,6 +350,26 @@ BEGIN
     EXECUTE format('ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA %I REVOKE ALL ON TABLES FROM PUBLIC, anon', v_schema);
     EXECUTE format('ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA %I GRANT SELECT, INSERT, UPDATE ON TABLES TO authenticated', v_schema);
     EXECUTE format('ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA %I GRANT ALL ON TABLES TO service_role', v_schema);
+
+    EXECUTE format('CREATE TABLE IF NOT EXISTS %I.migration_batches (
+        id TEXT PRIMARY KEY,
+        source_files JSONB NOT NULL DEFAULT ''[]''::JSONB,
+        row_counts JSONB NOT NULL DEFAULT ''{}''::JSONB,
+        control_totals JSONB NOT NULL DEFAULT ''{}''::JSONB,
+        status TEXT NOT NULL DEFAULT ''completed'',
+        imported_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+        imported_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )', v_schema);
+    EXECUTE format('CREATE TABLE IF NOT EXISTS %I.migration_records (
+        batch_id TEXT NOT NULL REFERENCES %I.migration_batches(id) ON DELETE CASCADE,
+        id TEXT NOT NULL,
+        record_type TEXT NOT NULL,
+        source_file TEXT NOT NULL,
+        source_row INTEGER NOT NULL,
+        payload JSONB NOT NULL,
+        imported_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        PRIMARY KEY (batch_id, id)
+    )', v_schema, v_schema);
 
     EXECUTE format($ddl$
         CREATE OR REPLACE FUNCTION %1$I.org_is_member()
@@ -401,7 +449,7 @@ BEGIN
     EXECUTE format('GRANT EXECUTE ON FUNCTION %I.org_can_access_branch(TEXT) TO authenticated, service_role', v_schema);
     EXECUTE format('GRANT EXECUTE ON FUNCTION %I.org_current_user_id() TO authenticated, service_role', v_schema);
 
-    FOREACH v_table IN ARRAY ARRAY['roles', 'users', 'branches', 'members', 'general_ledger', 'transactions', 'audit_trail'] LOOP
+    FOREACH v_table IN ARRAY ARRAY['roles', 'users', 'branches', 'members', 'general_ledger', 'transactions', 'audit_trail', 'migration_batches', 'migration_records'] LOOP
         EXECUTE format('ALTER TABLE %I.%I ENABLE ROW LEVEL SECURITY', v_schema, v_table);
     END LOOP;
 
@@ -450,6 +498,11 @@ BEGIN
     EXECUTE format('DROP POLICY IF EXISTS tenant_audit_insert ON %I.audit_trail', v_schema);
     EXECUTE format('CREATE POLICY tenant_audit_insert ON %I.audit_trail FOR INSERT TO authenticated WITH CHECK ("userId" = %I.org_current_user_id())', v_schema, v_schema);
 
+    EXECUTE format('DROP POLICY IF EXISTS tenant_migration_batches_select ON %I.migration_batches', v_schema);
+    EXECUTE format('CREATE POLICY tenant_migration_batches_select ON %I.migration_batches FOR SELECT TO authenticated USING (%I.org_has_permission(''MANAGE_USERS''))', v_schema, v_schema);
+    EXECUTE format('DROP POLICY IF EXISTS tenant_migration_records_select ON %I.migration_records', v_schema);
+    EXECUTE format('CREATE POLICY tenant_migration_records_select ON %I.migration_records FOR SELECT TO authenticated USING (%I.org_has_permission(''MANAGE_USERS''))', v_schema, v_schema);
+
     SELECT COALESCE(array_agg(DISTINCT btrim(split_part(setting, '=', 2))), ARRAY[]::TEXT[])
     INTO v_existing_schemas
     FROM pg_db_role_setting AS s
@@ -488,6 +541,64 @@ BEGIN
 END;
 $$;
 
+CREATE OR REPLACE FUNCTION public.persist_tenant_migration(
+    p_org_id TEXT,
+    p_batch_id TEXT,
+    p_source_files JSONB,
+    p_row_counts JSONB,
+    p_control_totals JSONB,
+    p_records JSONB
+)
+RETURNS INTEGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+    v_schema TEXT;
+    v_can_manage BOOLEAN := false;
+    v_inserted INTEGER := 0;
+BEGIN
+    SELECT schema_name INTO v_schema
+    FROM public.organizations
+    WHERE id = p_org_id AND status IN ('active', 'pending_setup');
+    IF v_schema IS NULL OR v_schema !~ '^org_[a-z0-9_]+$' THEN
+        RAISE EXCEPTION 'Organization schema is unavailable for migration.';
+    END IF;
+
+    IF NOT public.is_platform_superuser() THEN
+        EXECUTE format('SELECT %I.org_has_permission(''MANAGE_USERS'')', v_schema)
+        INTO v_can_manage;
+        IF NOT COALESCE(v_can_manage, false) THEN
+            RAISE EXCEPTION 'Organization administrator permission required for migration.';
+        END IF;
+    END IF;
+
+    IF p_batch_id IS NULL OR btrim(p_batch_id) = '' THEN
+        RAISE EXCEPTION 'Migration batch ID is required.';
+    END IF;
+
+    EXECUTE format(
+        'INSERT INTO %I.migration_batches (id, source_files, row_counts, control_totals, imported_by) VALUES ($1, $2, $3, $4, auth.uid())',
+        v_schema
+    ) USING p_batch_id, COALESCE(p_source_files, '[]'::JSONB),
+          COALESCE(p_row_counts, '{}'::JSONB), COALESCE(p_control_totals, '{}'::JSONB);
+
+    EXECUTE format($sql$
+        INSERT INTO %1$I.migration_records (batch_id, id, record_type, source_file, source_row, payload)
+        SELECT $1, item.id, item.record_type, item.source_file, item.source_row, item.payload
+        FROM jsonb_to_recordset($2) AS item(
+            id TEXT, record_type TEXT, source_file TEXT, source_row INTEGER, payload JSONB
+        )
+    $sql$, v_schema)
+    USING p_batch_id, COALESCE(p_records, '[]'::JSONB);
+    GET DIAGNOSTICS v_inserted = ROW_COUNT;
+    RETURN v_inserted;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.persist_tenant_migration(TEXT, TEXT, JSONB, JSONB, JSONB, JSONB) FROM PUBLIC, anon, authenticated;
+
 -- ============================================================
 -- ATOMIC ORGANISATION PROVISIONER
 -- Creates the registry row, schema, and initial tenant config in one RPC.
@@ -504,6 +615,7 @@ AS $$
 DECLARE
     v_schema TEXT := 'org_' || regexp_replace(lower(p_org_id), '[^a-z0-9_]', '_', 'g');
     v_actor UUID := auth.uid();
+    v_unknown_gl BOOLEAN;
 BEGIN
     IF NOT public.is_platform_superuser() THEN
         RAISE EXCEPTION 'Access denied: platform superuser required';
@@ -535,7 +647,7 @@ BEGIN
 
     INSERT INTO public.organizations (
         id, name, type, reg_number, country, base_currency, financial_year,
-        regulatory_body, min_liquidity_ratio, superuser_email, status, created_by
+        regulatory_body, min_liquidity_ratio, superuser_email, status, setup_completed, created_by
     ) VALUES (
         p_org_id,
         p_org_data->>'name',
@@ -548,6 +660,7 @@ BEGIN
         COALESCE((p_org_data->>'minLiquidityRatio')::NUMERIC, 15.0),
         p_org_data->>'superuserEmail',
         'pending_setup',
+        COALESCE((p_org_data->>'setupCompleted')::BOOLEAN, true),
         v_actor
     );
 
@@ -587,6 +700,60 @@ BEGIN
     USING COALESCE(p_org_data->'glAccounts', '[]'::JSONB);
 
     EXECUTE format($sql$
+        INSERT INTO %I.members (
+            id, name, "nationalId", phone, email, "joinDate", "branchId", "branchName",
+            "kycStatus", occupation, employer, "riskSegment", "relationshipScore",
+            "savingsBalance", "fixedDepositBalance", "shareCapital", "activeLoans", "guarantorCommitments"
+        )
+        SELECT item.id, item.name, item."nationalId", item.phone, item.email,
+               item."joinDate", item."branchId", item."branchName", item."kycStatus",
+               item.occupation, item.employer, item."riskSegment", COALESCE(item."relationshipScore", 50),
+               COALESCE(item."savingsBalance", 0), COALESCE(item."fixedDepositBalance", 0),
+               COALESCE(item."shareCapital", 0), COALESCE(item."activeLoans", '[]'::JSONB),
+               COALESCE(item."guarantorCommitments", '[]'::JSONB)
+        FROM jsonb_to_recordset($1) AS item(
+            id TEXT, name TEXT, "nationalId" TEXT, phone TEXT, email TEXT, "joinDate" TEXT,
+            "branchId" TEXT, "branchName" TEXT, "kycStatus" TEXT, occupation TEXT,
+            employer TEXT, "riskSegment" TEXT, "relationshipScore" INTEGER,
+            "savingsBalance" NUMERIC, "fixedDepositBalance" NUMERIC, "shareCapital" NUMERIC,
+            "activeLoans" JSONB, "guarantorCommitments" JSONB
+        )
+    $sql$, v_schema)
+    USING COALESCE(p_org_data->'members', '[]'::JSONB);
+
+    EXECUTE format($sql$
+        INSERT INTO %I.transactions (
+            id, date, type, status, channel, "memberId", "memberName", amount, details,
+            "glDebit", "glCredit", "branchId"
+        )
+        SELECT item.id, item.date, item.type, COALESCE(item.status, 'Completed'),
+               COALESCE(item.channel, 'Imported'), item."memberId", item."memberName",
+               item.amount, item.details, item."glDebit", item."glCredit", item."branchId"
+        FROM jsonb_to_recordset($1) AS item(
+            id TEXT, date TEXT, type TEXT, status TEXT, channel TEXT, "memberId" TEXT,
+            "memberName" TEXT, amount NUMERIC, details TEXT, "glDebit" TEXT,
+            "glCredit" TEXT, "branchId" TEXT
+        )
+    $sql$, v_schema)
+    USING COALESCE(p_org_data->'transactions', '[]'::JSONB);
+
+    EXECUTE format(
+        'SELECT EXISTS (SELECT 1 FROM jsonb_to_recordset($1) AS imported(code TEXT, balance NUMERIC) WHERE NOT EXISTS (SELECT 1 FROM %I.general_ledger AS ledger WHERE ledger.code = imported.code))',
+        v_schema
+    ) INTO v_unknown_gl USING COALESCE(p_org_data->'openingBalances', '[]'::JSONB);
+    IF v_unknown_gl THEN
+        RAISE EXCEPTION 'An opening balance references a GL code not found in the organization chart.';
+    END IF;
+
+    EXECUTE format($sql$
+        UPDATE %1$I.general_ledger AS ledger
+        SET balance = imported.balance
+        FROM jsonb_to_recordset($1) AS imported(code TEXT, balance NUMERIC)
+        WHERE ledger.code = imported.code
+    $sql$, v_schema)
+    USING COALESCE(p_org_data->'openingBalances', '[]'::JSONB);
+
+    EXECUTE format($sql$
         INSERT INTO %I.users (
             id, name, email, roles, "branchId", "branchName",
             "singleApprovalLimit", "dailyApprovalLimit", status, "mfaEnabled"
@@ -621,9 +788,201 @@ BEGIN
     SET status = 'active', activated_at = NOW()
     WHERE id = p_org_id;
 
+    IF jsonb_array_length(COALESCE(p_org_data->'migrationRecords', '[]'::JSONB)) > 0 THEN
+        PERFORM public.persist_tenant_migration(
+            p_org_id,
+            p_org_data->>'migrationBatchId',
+            p_org_data->'migrationSourceFiles',
+            p_org_data->'migrationRowCounts',
+            p_org_data->'migrationControlTotals',
+            p_org_data->'migrationRecords'
+        );
+    END IF;
+
     RETURN jsonb_build_object('org_id', p_org_id, 'schema_name', v_schema, 'status', 'active');
 END;
 $$;
+
+CREATE OR REPLACE FUNCTION public.apply_tenant_setup(
+    p_org_id TEXT,
+    p_org_data JSONB,
+    p_setup_completed BOOLEAN DEFAULT true
+)
+RETURNS public.organizations
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+    v_schema TEXT;
+    v_can_manage BOOLEAN;
+    v_unknown_gl BOOLEAN;
+    v_org public.organizations%ROWTYPE;
+BEGIN
+    SELECT schema_name INTO v_schema
+    FROM public.organizations
+    WHERE id = p_org_id AND status = 'active'
+    FOR UPDATE;
+    IF v_schema IS NULL OR v_schema !~ '^org_[a-z0-9_]+$' THEN
+        RAISE EXCEPTION 'Active organization not found.';
+    END IF;
+
+    EXECUTE format('SELECT %I.org_has_permission(''MANAGE_USERS'')', v_schema)
+    INTO v_can_manage;
+    IF NOT COALESCE(v_can_manage, false) THEN
+        RAISE EXCEPTION 'Organization administrator permission required.';
+    END IF;
+
+    IF jsonb_array_length(COALESCE(p_org_data->'branches', '[]'::JSONB)) = 0 THEN
+        RAISE EXCEPTION 'At least one branch is required.';
+    END IF;
+
+    EXECUTE format($sql$
+        INSERT INTO %I.branches (id, name, code, "tellerCount", "vaultLimit", "tellerCashLimit", status)
+        SELECT item.id, item.name, item.code, COALESCE(item."tellerCount", 0),
+               COALESCE(item."vaultLimit", 0), COALESCE(item."tellerCashLimit", 0),
+               COALESCE(item.status, 'Active')
+        FROM jsonb_to_recordset($1) AS item(
+            id TEXT, name TEXT, code TEXT, "tellerCount" INTEGER,
+            "vaultLimit" NUMERIC, "tellerCashLimit" NUMERIC, status TEXT
+        )
+        ON CONFLICT (id) DO UPDATE SET
+            name = EXCLUDED.name, code = EXCLUDED.code, "tellerCount" = EXCLUDED."tellerCount",
+            "vaultLimit" = EXCLUDED."vaultLimit", "tellerCashLimit" = EXCLUDED."tellerCashLimit",
+            status = EXCLUDED.status
+    $sql$, v_schema)
+    USING COALESCE(p_org_data->'branches', '[]'::JSONB);
+
+    EXECUTE format($sql$
+        INSERT INTO %I.general_ledger (code, name, category, type, normal, balance, "isContra")
+        SELECT item.code, item.name, item.category, item.type, item.normal,
+               COALESCE(item.balance, 0), COALESCE(item."isContra", false)
+        FROM jsonb_to_recordset($1) AS item(
+            code TEXT, name TEXT, category TEXT, type TEXT, normal TEXT,
+            balance NUMERIC, "isContra" BOOLEAN
+        )
+        ON CONFLICT (code) DO UPDATE SET
+            name = EXCLUDED.name, category = EXCLUDED.category, type = EXCLUDED.type,
+            normal = EXCLUDED.normal, "isContra" = EXCLUDED."isContra"
+    $sql$, v_schema)
+    USING COALESCE(p_org_data->'glAccounts', '[]'::JSONB);
+
+    EXECUTE format($sql$
+        INSERT INTO %I.members (
+            id, name, "nationalId", phone, email, "joinDate", "branchId", "branchName",
+            "kycStatus", occupation, employer, "riskSegment", "relationshipScore",
+            "savingsBalance", "fixedDepositBalance", "shareCapital", "activeLoans", "guarantorCommitments"
+        )
+        SELECT item.id, item.name, item."nationalId", item.phone, item.email,
+               item."joinDate", item."branchId", item."branchName", item."kycStatus",
+               item.occupation, item.employer, item."riskSegment", COALESCE(item."relationshipScore", 50),
+               COALESCE(item."savingsBalance", 0), COALESCE(item."fixedDepositBalance", 0),
+               COALESCE(item."shareCapital", 0), COALESCE(item."activeLoans", '[]'::JSONB),
+               COALESCE(item."guarantorCommitments", '[]'::JSONB)
+        FROM jsonb_to_recordset($1) AS item(
+            id TEXT, name TEXT, "nationalId" TEXT, phone TEXT, email TEXT, "joinDate" TEXT,
+            "branchId" TEXT, "branchName" TEXT, "kycStatus" TEXT, occupation TEXT,
+            employer TEXT, "riskSegment" TEXT, "relationshipScore" INTEGER,
+            "savingsBalance" NUMERIC, "fixedDepositBalance" NUMERIC, "shareCapital" NUMERIC,
+            "activeLoans" JSONB, "guarantorCommitments" JSONB
+        )
+        ON CONFLICT (id) DO NOTHING
+    $sql$, v_schema)
+    USING COALESCE(p_org_data->'members', '[]'::JSONB);
+
+    EXECUTE format($sql$
+        UPDATE %1$I.members AS member
+        SET name = imported.name,
+            "nationalId" = imported."nationalId",
+            phone = imported.phone,
+            email = COALESCE(NULLIF(imported.email, ''), member.email),
+            "joinDate" = imported."joinDate",
+            "branchId" = imported."branchId",
+            "branchName" = imported."branchName",
+            "kycStatus" = imported."kycStatus",
+            occupation = COALESCE(NULLIF(imported.occupation, ''), member.occupation),
+            employer = COALESCE(NULLIF(imported.employer, ''), member.employer),
+            "riskSegment" = COALESCE(NULLIF(imported."riskSegment", ''), member."riskSegment"),
+            "relationshipScore" = COALESCE(imported."relationshipScore", member."relationshipScore"),
+            "savingsBalance" = COALESCE(imported."savingsBalance", member."savingsBalance"),
+            "fixedDepositBalance" = COALESCE(imported."fixedDepositBalance", member."fixedDepositBalance"),
+            "shareCapital" = COALESCE(imported."shareCapital", member."shareCapital"),
+            "activeLoans" = CASE
+                WHEN jsonb_array_length(COALESCE(imported."activeLoans", '[]'::JSONB)) > 0
+                THEN imported."activeLoans" ELSE member."activeLoans" END
+        FROM jsonb_to_recordset($1) AS imported(
+            id TEXT, name TEXT, "nationalId" TEXT, phone TEXT, email TEXT, "joinDate" TEXT,
+            "branchId" TEXT, "branchName" TEXT, "kycStatus" TEXT, occupation TEXT,
+            employer TEXT, "riskSegment" TEXT, "relationshipScore" INTEGER,
+            "savingsBalance" NUMERIC, "fixedDepositBalance" NUMERIC, "shareCapital" NUMERIC,
+            "activeLoans" JSONB
+        )
+        WHERE member.id = imported.id
+    $sql$, v_schema)
+    USING COALESCE(p_org_data->'members', '[]'::JSONB);
+
+    EXECUTE format($sql$
+        INSERT INTO %I.transactions (
+            id, date, type, status, channel, "memberId", "memberName", amount, details,
+            "glDebit", "glCredit", "branchId"
+        )
+        SELECT item.id, item.date, item.type, COALESCE(item.status, 'Completed'),
+               COALESCE(item.channel, 'Imported'), item."memberId", item."memberName",
+               item.amount, item.details, item."glDebit", item."glCredit", item."branchId"
+        FROM jsonb_to_recordset($1) AS item(
+            id TEXT, date TEXT, type TEXT, status TEXT, channel TEXT, "memberId" TEXT,
+            "memberName" TEXT, amount NUMERIC, details TEXT, "glDebit" TEXT,
+            "glCredit" TEXT, "branchId" TEXT
+        )
+        ON CONFLICT (id) DO NOTHING
+    $sql$, v_schema)
+    USING COALESCE(p_org_data->'transactions', '[]'::JSONB);
+
+    EXECUTE format(
+        'SELECT EXISTS (SELECT 1 FROM jsonb_to_recordset($1) AS imported(code TEXT, balance NUMERIC) WHERE NOT EXISTS (SELECT 1 FROM %I.general_ledger AS ledger WHERE ledger.code = imported.code))',
+        v_schema
+    ) INTO v_unknown_gl USING COALESCE(p_org_data->'openingBalances', '[]'::JSONB);
+    IF v_unknown_gl THEN
+        RAISE EXCEPTION 'An opening balance references a GL code not found in the organization chart.';
+    END IF;
+    EXECUTE format($sql$
+        UPDATE %1$I.general_ledger AS ledger
+        SET balance = imported.balance
+        FROM jsonb_to_recordset($1) AS imported(code TEXT, balance NUMERIC)
+        WHERE ledger.code = imported.code
+    $sql$, v_schema)
+    USING COALESCE(p_org_data->'openingBalances', '[]'::JSONB);
+
+    UPDATE public.organizations AS org
+    SET name = COALESCE(NULLIF(p_org_data->>'name', ''), org.name),
+        type = COALESCE(NULLIF(p_org_data->>'type', ''), org.type),
+        reg_number = COALESCE(NULLIF(p_org_data->>'regNumber', ''), org.reg_number),
+        country = COALESCE(NULLIF(p_org_data->>'country', ''), org.country),
+        base_currency = COALESCE(NULLIF(p_org_data->>'baseCurrency', ''), org.base_currency),
+        financial_year = COALESCE(NULLIF(p_org_data->>'financialYear', ''), org.financial_year),
+        regulatory_body = COALESCE(NULLIF(p_org_data->>'regulatoryBody', ''), org.regulatory_body),
+        min_liquidity_ratio = COALESCE(NULLIF(p_org_data->>'minLiquidityRatio', '')::NUMERIC, org.min_liquidity_ratio),
+        setup_completed = p_setup_completed
+    WHERE org.id = p_org_id
+    RETURNING org.* INTO v_org;
+
+    IF jsonb_array_length(COALESCE(p_org_data->'migrationRecords', '[]'::JSONB)) > 0 THEN
+        PERFORM public.persist_tenant_migration(
+            p_org_id,
+            p_org_data->>'migrationBatchId',
+            p_org_data->'migrationSourceFiles',
+            p_org_data->'migrationRowCounts',
+            p_org_data->'migrationControlTotals',
+            p_org_data->'migrationRecords'
+        );
+    END IF;
+
+    RETURN v_org;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.apply_tenant_setup(TEXT, JSONB, BOOLEAN) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.apply_tenant_setup(TEXT, JSONB, BOOLEAN) TO authenticated;
 
 REVOKE ALL ON FUNCTION public.provision_org(TEXT, JSONB) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.provision_org(TEXT, JSONB) TO authenticated;

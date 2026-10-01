@@ -248,7 +248,7 @@ const ReportsView = {
         if (format === 'xlsx') {
           this.downloadXlsx(rows, fileName, state);
         } else {
-          this.downloadCsv(rows, fileName);
+          this.downloadCsv(rows, fileName, state);
         }
 
         if (typeof App !== 'undefined' && App.showToast) {
@@ -325,17 +325,25 @@ const ReportsView = {
     }
   },
 
-  downloadCsv(rows, fileName) {
+  downloadCsv(rows, fileName, state) {
     if (!rows.length) {
       rows = [{ NoData: 'No records available for this report.' }];
     }
 
     const headers = Object.keys(rows[0]);
-    const csv = [headers.join(',')].concat(rows.map(row => headers.map(header => this.escapeCsv(row[header])).join(','))).join('\n');
+    const organizationName = state.institution?.name || 'Organization';
+    const csv = [
+      'FINAGE OS',
+      `Organization,${this.escapeCsv(organizationName)}`,
+      `Report,${this.escapeCsv(this.getCategoryById(this.activeCategory).label)}`,
+      '',
+      headers.map(header => this.escapeCsv(header)).join(','),
+      ...rows.map(row => headers.map(header => this.escapeCsv(row[header])).join(','))
+    ].join('\r\n');
     this.triggerDownload(new Blob([csv], { type: 'text/csv;charset=utf-8;' }), fileName);
   },
 
-  downloadXlsx(rows, fileName) {
+  downloadXlsx(rows, fileName, state) {
     if (!window.XLSX) {
       if (typeof App !== 'undefined' && App.showToast) {
         App.showToast('XLSX export is unavailable because the spreadsheet library did not load.', 'warning');
@@ -347,7 +355,17 @@ const ReportsView = {
       rows = [{ NoData: 'No records available for this report.' }];
     }
 
-    const ws = XLSX.utils.json_to_sheet(rows);
+    const organizationName = state.institution?.name || 'Organization';
+    const headers = Object.keys(rows[0]);
+    const worksheetRows = [
+      ['FINAGE OS'],
+      ['Organization', organizationName],
+      ['Report', this.getCategoryById(this.activeCategory).label],
+      [],
+      headers,
+      ...rows.map(row => headers.map(header => row[header]))
+    ];
+    const ws = XLSX.utils.aoa_to_sheet(worksheetRows);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Report');
     XLSX.writeFile(wb, fileName);

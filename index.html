@@ -39,8 +39,9 @@
       <div class="brand-section">
         <button id="btn-open-portal-nav" class="header-btn icon-btn" type="button" aria-label="Open portal navigation">☰</button>
         <img src="images/logo.png" alt="Finage OS Logo" style="height: 34px; width: auto; object-fit: contain;">
-        <div class="brand-title" id="brand-title-display">
-          FINAGE OS
+        <div class="brand-lockup">
+          <div class="brand-title" id="brand-title-display">FINAGE OS</div>
+          <div class="brand-organization" id="organization-title-display">Select organization</div>
         </div>
       </div>
 
@@ -128,6 +129,7 @@
     <div id="reports-modal-mount"></div>
     <div id="ai-widget-mount"></div>
     <div id="client-selection-modal-mount"></div>
+    <div id="org-setup-mount"></div>
 
     <!-- Toast Shelf Container -->
     <div id="toast-shelf" class="toast-shelf" aria-live="polite"></div>
@@ -137,6 +139,8 @@
   <script src="js/utils/formatters.js"></script>
   <script src="js/utils/chartManager.js"></script>
   <script src="js/utils/exportService.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="js/utils/setupImport.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="js/supabaseClient.js"></script>
   <script src="js/store.js"></script>
@@ -174,6 +178,7 @@
   <script src="js/platform.js"></script>
   <script src="js/views/orgSelectorView.js"></script>
   <script src="js/views/setupWizardView.js"></script>
+  <script src="js/views/organizationSetupView.js"></script>
   <script src="js/app.js"></script>
 
 </body>

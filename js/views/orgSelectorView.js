@@ -210,7 +210,7 @@ const OrgSelectorView = {
             SupabaseSync.init(store).catch(e => console.warn('[OrgSelector] sync error:', e));
           }
           store.state.orgSelectorShown = false;
-          store.save();
+          store.saveLocal();
           if (App && App.showToast) App.showToast('Switched to: ' + Platform.getActiveOrg().name, 'success');
         }
       });

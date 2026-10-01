@@ -12,7 +12,10 @@ const SetupWizardView = {
     branches: [],
     glAccounts: [],
     staffUsers: [],
-    roles: []
+    roles: [],
+    setupPlan: 'now',
+    importMode: 'full',
+    importData: null
   },
   _loading: false,
   _provisionedSchema: null,
@@ -57,7 +60,10 @@ const SetupWizardView = {
       branches: [{ id: 'br-01', name: 'Head Office', code: 'HQ', tellerCount: 2, vaultLimit: 50000000, tellerCashLimit: 2000000 }],
       glAccounts: [...this._defaultGL],
       staffUsers: [],
-      roles: [...this._defaultRoles]
+      roles: [...this._defaultRoles],
+      setupPlan: 'now',
+      importMode: 'full',
+      importData: { organization: {}, branches: [], members: [], loans: [], transactions: [], glAccounts: [], openingBalances: [], migrationRecords: [], sourceFiles: [], errors: [], sheets: [] }
     };
     this._provisionedSchema = null;
     this._invitationResults = [];
@@ -142,11 +148,15 @@ const SetupWizardView = {
     }
   },
 
+  _escapeHtml(value) {
+    return String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
+  },
+
   // Step 1: Organisation Info
   _buildStep1() {
     const o = this._data.org;
     const input = (id, label, type, placeholder, val, extra='') =>
-      `<div class="form-group"><label class="form-label" style="font-size:.7rem;letter-spacing:.06em;">${label}</label><input type="${type}" id="${id}" class="form-control" placeholder="${placeholder}" value="${val||''}" ${extra}></div>`;
+      `<div class="form-group"><label class="form-label" style="font-size:.7rem;letter-spacing:.06em;">${label}</label><input type="${type}" id="${id}" class="form-control" placeholder="${placeholder}" value="${this._escapeHtml(val || '')}" ${extra}></div>`;
     const select = (id, label, options, val) =>
       `<div class="form-group"><label class="form-label" style="font-size:.7rem;letter-spacing:.06em;">${label}</label><select id="${id}" class="form-control">${options.map(op => `<option value="${op.v}" ${op.v===val?'selected':''}>${op.l}</option>`).join('')}</select></div>`;
     return `
@@ -176,10 +186,11 @@ const SetupWizardView = {
 
   // Step 2: Branches
   _buildStep2() {
+    const setupLater = this._data.setupPlan === 'later';
     const rows = this._data.branches.map((b, i) => `
       <tr>
-        <td><input class="form-control form-control-sm" style="font-size:.75rem;" data-field="name" data-idx="${i}" value="${b.name}"></td>
-        <td><input class="form-control form-control-sm" style="font-size:.75rem;font-family:monospace;" data-field="code" data-idx="${i}" value="${b.code}"></td>
+        <td><input class="form-control form-control-sm" style="font-size:.75rem;" data-field="name" data-idx="${i}" value="${this._escapeHtml(b.name)}"></td>
+        <td><input class="form-control form-control-sm" style="font-size:.75rem;font-family:monospace;" data-field="code" data-idx="${i}" value="${this._escapeHtml(b.code)}"></td>
         <td><input type="number" class="form-control form-control-sm" style="font-size:.75rem;" data-field="tellerCount" data-idx="${i}" value="${b.tellerCount||0}"></td>
         <td><input type="number" class="form-control form-control-sm" style="font-size:.75rem;" data-field="vaultLimit" data-idx="${i}" value="${b.vaultLimit||0}"></td>
         <td><input type="number" class="form-control form-control-sm" style="font-size:.75rem;" data-field="tellerCashLimit" data-idx="${i}" value="${b.tellerCashLimit||0}"></td>
@@ -188,10 +199,23 @@ const SetupWizardView = {
     `).join('');
 
     return `
-      <div style="margin-bottom:.75rem;display:flex;align-items:center;justify-content:space-between;">
-        <p style="margin:0;font-size:.82rem;color:#475569;">Define all branches / service points. The first branch is typically Head Office.</p>
-        <button id="btn-add-branch" style="padding:.4rem 1rem;border-radius:8px;border:2px solid #10b981;background:#f0fdf4;color:#059669;font-weight:700;font-size:.75rem;cursor:pointer;">+ Add Branch</button>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-bottom:1rem;">
+        <label style="display:flex;gap:.65rem;align-items:flex-start;padding:.85rem;border:2px solid ${setupLater ? '#e2e8f0' : '#10b981'};border-radius:10px;cursor:pointer;">
+          <input type="radio" name="wizard-setup-plan" value="now" ${setupLater ? '' : 'checked'}>
+          <span><strong style="display:block;color:#064e3b;font-size:.8rem;">Set up now</strong><small style="color:#64748b;">Enter branches manually or import your workbook/CSV.</small></span>
+        </label>
+        <label style="display:flex;gap:.65rem;align-items:flex-start;padding:.85rem;border:2px solid ${setupLater ? '#10b981' : '#e2e8f0'};border-radius:10px;cursor:pointer;">
+          <input type="radio" name="wizard-setup-plan" value="later" ${setupLater ? 'checked' : ''}>
+          <span><strong style="display:block;color:#064e3b;font-size:.8rem;">Finish later</strong><small style="color:#64748b;">Provision a Head Office baseline. The organization admin can complete setup after sign-in.</small></span>
+        </label>
       </div>
+      <div style="margin-bottom:.75rem;display:flex;align-items:center;justify-content:space-between;">
+        <p style="margin:0;font-size:.82rem;color:#475569;">${setupLater ? 'A minimal Head Office branch will be created so the organization can be provisioned.' : 'Define branches manually or upload existing setup and account data.'}</p>
+        ${setupLater ? '' : '<button id="btn-add-branch" style="padding:.4rem 1rem;border-radius:8px;border:2px solid #10b981;background:#f0fdf4;color:#059669;font-weight:700;font-size:.75rem;cursor:pointer;">+ Add Branch</button>'}
+      </div>
+      ${setupLater ? `
+        <div style="padding:.7rem .85rem;margin-bottom:.8rem;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;font-size:.78rem;color:#475569;">Head Office · HQ · no teller limits configured</div>
+      ` : `
       <div style="overflow-x:auto;border-radius:10px;border:1px solid #e2e8f0;">
         <table style="width:100%;border-collapse:collapse;font-size:.78rem;">
           <thead>
@@ -207,7 +231,52 @@ const SetupWizardView = {
           <tbody id="branches-tbody">${rows}</tbody>
         </table>
       </div>
+      <div style="margin-top:1rem;padding:1rem;border:1px solid #dbeafe;background:#f8fbff;border-radius:10px;">
+        <div style="font-size:.82rem;font-weight:800;color:#1e3a8a;margin-bottom:.55rem;">Choose a migration approach</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem;margin-bottom:.75rem;">
+          <label style="padding:.7rem;border:1px solid ${this._data.importMode === 'full' ? '#2563eb' : '#cbd5e1'};border-radius:8px;background:#fff;display:flex;gap:.5rem;align-items:flex-start;">
+            <input type="radio" name="wizard-import-mode" value="full" ${this._data.importMode === 'full' ? 'checked' : ''}>
+            <span><strong style="display:block;font-size:.75rem;color:#1e3a8a;">Full Migration</strong><small style="font-size:.68rem;color:#475569;">Imports supported history and preserves source rows for audit.</small></span>
+          </label>
+          <label style="padding:.7rem;border:1px solid ${this._data.importMode === 'cutover' ? '#2563eb' : '#cbd5e1'};border-radius:8px;background:#fff;display:flex;gap:.5rem;align-items:flex-start;">
+            <input type="radio" name="wizard-import-mode" value="cutover" ${this._data.importMode === 'cutover' ? 'checked' : ''}>
+            <span><strong style="display:block;font-size:.75rem;color:#1e3a8a;">Opening-Balance Cutover</strong><small style="font-size:.68rem;color:#475569;">Use member/account balances and GL opening balances; keep detailed history in the old system.</small></span>
+          </label>
+        </div>
+        <div style="font-size:.73rem;color:#475569;margin-bottom:.45rem;">Full Migration workbook sheets: Organization, Branches, Chart of Accounts, GL Opening Balances, Members, Deposit Accounts, Loans, Loan Schedules, Loan Repayments, Transactions, Audit History, Bank Accounts, External Facilities, Investments, Operating Expenses, Teller Tills, and Collateral.</div>
+        <div style="font-size:.68rem;color:#64748b;margin-bottom:.65rem;">Members, deposit summaries, loans, transactions, GL, branches, and chart of accounts are mapped to live data. Schedules, repayment details, audit history, collateral, tills, bank accounts, facilities, investments, and expenses are preserved in the organization migration archive for reconciliation; they are not yet wired into every live module.</div>
+        <div style="display:flex;gap:.65rem;align-items:end;flex-wrap:wrap;">
+          <label style="font-size:.7rem;font-weight:700;color:#475569;">CSV data type
+            <select id="wizard-csv-type" class="form-control" style="min-width:180px;margin-top:.25rem;">
+              <option value="branches">Branches</option><option value="organization">Organization profile</option><option value="chartOfAccounts">Chart of accounts</option><option value="openingBalances">GL opening balances</option><option value="members">Members</option><option value="depositAccounts">Deposit accounts</option><option value="loans">Loans</option><option value="loanSchedules">Loan schedules</option><option value="loanRepayments">Loan repayments</option><option value="transactions">Transactions</option><option value="auditHistory">Audit history</option><option value="bankAccounts">Bank accounts</option><option value="externalFacilities">External facilities</option><option value="investments">Investments</option><option value="operatingExpenses">Operating expenses</option><option value="tellerTills">Teller tills</option><option value="collateral">Collateral</option>
+            </select>
+          </label>
+          <label style="font-size:.7rem;font-weight:700;color:#475569;">Workbook or CSV
+            <input id="wizard-import-file" type="file" class="form-control" accept=".xlsx,.xls,.csv" style="max-width:320px;margin-top:.25rem;">
+          </label>
+          <button id="wizard-download-template" type="button" class="btn btn-secondary btn-sm">Download workbook template</button>
+        </div>
+        ${this._buildImportSummary()}
+      </div>
+      `}
     `;
+  },
+
+  _buildImportSummary() {
+    const data = this._data.importData || {};
+    const counts = [
+      ['Branches', data.branches?.length || 0], ['Members', data.members?.length || 0],
+      ['Loans', data.loans?.length || 0], ['Transactions', data.transactions?.length || 0],
+      ['GL accounts', data.glAccounts?.length || 0], ['Opening balances', data.openingBalances?.length || 0],
+      [this._data.importMode === 'full' ? 'Source rows to archive' : 'Cutover source rows', data.migrationRecords?.length || 0]
+    ].filter(([, count]) => count > 0);
+    if (!counts.length && !data.errors?.length && !Object.keys(data.organization || {}).length) return '';
+    const escapeHtml = value => String(value).replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
+    const controls = SetupImport.getMigrationControls(data, this._data.glAccounts);
+    const glStatus = controls.openingGlUnknownCodes.length
+      ? `Unknown GL codes: ${escapeHtml(controls.openingGlUnknownCodes.join(', '))}`
+      : `GL debit ${controls.openingGlDebits.toLocaleString()} · credit ${controls.openingGlCredits.toLocaleString()} · variance ${controls.openingGlVariance.toLocaleString()}`;
+    return `<div style="margin-top:.7rem;font-size:.72rem;color:#334155;">${counts.map(([label, count]) => `${label}: <strong>${count}</strong>`).join(' · ')}${Object.keys(data.organization || {}).length ? ' · Organization profile imported' : ''}</div>${data.migrationRecords?.length ? `<div style="margin-top:.45rem;padding:.55rem .7rem;background:#fff;border:1px solid #cbd5e1;border-radius:6px;font-size:.68rem;color:#334155;">Reconciliation controls · deposit balances ${controls.depositAccountBalances.toLocaleString()} · loan outstanding ${controls.loanOutstandingBalances.toLocaleString()} · transaction amount ${controls.transactionAmount.toLocaleString()} · ${glStatus}</div>` : ''}${data.errors?.length ? `<ul style="margin:.4rem 0 0;padding-left:1.2rem;color:#b91c1c;font-size:.7rem;">${data.errors.map(error => `<li>${escapeHtml(error)}</li>`).join('')}</ul>` : ''}`;
   },
 
   // Step 3: Chart of Accounts
@@ -358,6 +427,13 @@ const SetupWizardView = {
           </div>
         </div>
 
+        <div style="padding:.8rem 1rem;border:1px solid ${this._data.setupPlan === 'later' ? '#fbbf24' : '#a7f3d0'};background:${this._data.setupPlan === 'later' ? '#fffbeb' : '#f0fdf4'};border-radius:10px;font-size:.78rem;color:${this._data.setupPlan === 'later' ? '#92400e' : '#065f46'};">
+          ${this._data.setupPlan === 'later'
+            ? '<b>Organization setup will be marked incomplete.</b> A Head Office baseline will be created; the organization administrator can add branches, update profile details, and import data after sign-in.'
+            : `<b>${this._data.importMode === 'full' ? 'Full Migration' : 'Opening-Balance Cutover'}:</b> ${this._data.importData.branches.length} imported branches · ${this._data.importData.members.length} members · ${this._data.importData.loans.length} loans · ${this._data.importData.transactions.length} transactions · ${this._data.importData.openingBalances.length} opening balances · ${this._data.importMode === 'full' ? this._data.importData.migrationRecords.length + ' source rows archived' : 'legacy source rows not archived'}.`}
+        </div>
+        ${this._data.importData.errors.length ? `<div style="padding:.7rem .85rem;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;color:#b91c1c;font-size:.72rem;">${this._data.importData.errors.map(error => `<div>${escapeHtml(error)}</div>`).join('')}</div>` : ''}
+
         ${this._provisionedSchema ? `
           <div style="background:#f0fdf4;border:1px solid #a7f3d0;border-radius:12px;padding:1rem;font-size:.82rem;color:#065f46;">
             <b>Organisation provisioned successfully.</b> PostgreSQL created and seeded <code>${escapeHtml(this._provisionedSchema)}</code> directly.
@@ -406,6 +482,66 @@ const SetupWizardView = {
     // Provision
     const provBtn = overlay.querySelector('#wizard-provision');
     if (provBtn) provBtn.addEventListener('click', () => this._onProvision(overlay));
+
+    overlay.querySelectorAll('[name="wizard-setup-plan"]').forEach(input => {
+      input.addEventListener('change', event => {
+        const plan = event.currentTarget.value;
+        if (plan === 'later') {
+          const hasImportedData = Object.values(this._data.importData || {}).some(value => Array.isArray(value) && value.length > 0);
+          if (hasImportedData && !confirm('Switch to Finish Later? Imported rows will be removed from this setup draft.')) {
+            event.currentTarget.checked = false;
+            overlay.querySelector('[name="wizard-setup-plan"][value="now"]').checked = true;
+            return;
+          }
+          this._data.importData = { organization: {}, branches: [], members: [], loans: [], transactions: [], glAccounts: [], openingBalances: [], migrationRecords: [], sourceFiles: [], errors: [], sheets: [] };
+          this._data.branches = [{ id: 'br-01', name: 'Head Office', code: 'HQ', tellerCount: 0, vaultLimit: 0, tellerCashLimit: 0 }];
+        } else if (this._data.setupPlan === 'later') {
+          this._data.branches = [{ id: 'br-01', name: 'Head Office', code: 'HQ', tellerCount: 2, vaultLimit: 50000000, tellerCashLimit: 2000000 }];
+        }
+        this._data.setupPlan = plan;
+        this._render();
+      });
+    });
+
+    const importInput = overlay.querySelector('#wizard-import-file');
+    const templateButton = overlay.querySelector('#wizard-download-template');
+    if (templateButton) templateButton.addEventListener('click', () => SetupImport.downloadTemplate());
+    overlay.querySelectorAll('[name="wizard-import-mode"]').forEach(input => {
+      input.addEventListener('change', event => {
+        this._data.importMode = event.currentTarget.value;
+        this._render();
+      });
+    });
+    if (importInput) {
+      importInput.addEventListener('change', async event => {
+        const input = event.currentTarget;
+        const file = input.files?.[0];
+        if (!file) return;
+        try {
+          const csvType = overlay.querySelector('#wizard-csv-type')?.value || 'branches';
+          const incoming = await SetupImport.parseFile(file, csvType);
+          this._data.setupPlan = 'now';
+          if (incoming.sheets.includes('chartOfAccounts')) this._data.glAccounts = [];
+          if (this._data.importMode === 'cutover') {
+            const fullOnlyTypes = incoming.migrationRecords.filter(record => !['branches', 'members', 'loans', 'transactions', 'chartOfAccounts', 'openingBalances'].includes(record.recordType));
+            if (fullOnlyTypes.length) throw new Error('This workbook contains full-migration sheets. Select Full Migration to import them.');
+          }
+          if (incoming.organization && Object.keys(incoming.organization).length) {
+            this._data.org = { ...this._data.org, ...incoming.organization };
+          }
+          if (!this._data.importData.branches.length && incoming.branches.length) this._data.branches = [];
+          SetupImport.merge(this._data.importData, incoming);
+          this._data.branches.push(...incoming.branches);
+          if (incoming.glAccounts.length) this._data.glAccounts.push(...incoming.glAccounts);
+          this._render();
+          if (App && App.showToast) App.showToast(`Imported ${file.name}. Review the detected row counts before provisioning.`, 'success');
+        } catch (error) {
+          if (App && App.showToast) App.showToast(`Import failed: ${error.message}`, 'danger');
+        } finally {
+          input.value = '';
+        }
+      });
+    }
 
     // Step 2: branch table edits
     const branchesTbody = overlay.querySelector('#branches-tbody');
@@ -566,6 +702,62 @@ const SetupWizardView = {
     if (this._loading) return;
     const errEl = overlay.querySelector('#wizard-error');
 
+    if (this._data.importData.errors.length) {
+      if (errEl) {
+        errEl.textContent = 'Fix the import errors shown in the setup step before provisioning.';
+        errEl.style.display = 'block';
+      }
+      return;
+    }
+
+    const importData = JSON.parse(JSON.stringify(this._data.importData));
+    const migrationControls = SetupImport.getMigrationControls(importData, this._data.glAccounts);
+    if (importData.openingBalances.length && (migrationControls.openingGlUnknownCodes.length || Math.abs(migrationControls.openingGlVariance) > 0.01)) {
+      if (errEl) {
+        errEl.textContent = migrationControls.openingGlUnknownCodes.length
+          ? `Opening balances reference unknown GL codes: ${migrationControls.openingGlUnknownCodes.join(', ')}.`
+          : `Opening GL trial balance does not balance (debits ${migrationControls.openingGlDebits}, credits ${migrationControls.openingGlCredits}, variance ${migrationControls.openingGlVariance}).`;
+        errEl.style.display = 'block';
+      }
+      return;
+    }
+    if (this._data.importMode === 'full') SetupImport.attachFullMigration(importData);
+    else SetupImport.attachLoans(importData);
+    if (importData.errors.length) {
+      if (errEl) {
+        errEl.textContent = importData.errors.join(' ');
+        errEl.style.display = 'block';
+      }
+      return;
+    }
+
+    const branches = this._data.setupPlan === 'later'
+      ? [{ id: 'br-01', name: 'Head Office', code: 'HQ', tellerCount: 0, vaultLimit: 0, tellerCashLimit: 0 }]
+      : this._data.branches;
+    SetupImport.validateOrganizationLinks(importData, branches);
+    if (importData.errors.length) {
+      if (errEl) {
+        errEl.textContent = importData.errors.join(' ');
+        errEl.style.display = 'block';
+      }
+      return;
+    }
+    const branchById = new Map(branches.map(branch => [branch.id, branch]));
+    const branchByName = new Map(branches.map(branch => [String(branch.name).toLowerCase(), branch]));
+    const branchByCode = new Map(branches.map(branch => [String(branch.code).toLowerCase(), branch]));
+    for (const member of importData.members) {
+      const branch = branchById.get(member.branchId) || branchByCode.get(String(member.branchId).toLowerCase()) || branchByName.get(member.branchName.toLowerCase());
+      if (member.branchId && !branch) {
+        if (errEl) {
+          errEl.textContent = `Member ${member.id} references branch ${member.branchId}, which is not in the setup data.`;
+          errEl.style.display = 'block';
+        }
+        return;
+      }
+      member.branchId = branch?.id || branches[0].id;
+      member.branchName = member.branchName || branch?.name || branches[0].name;
+    }
+
     const emailOwners = new Map();
     const invitationTargets = [
       { email: this._data.org.superuserEmail, label: 'Organisation owner' },
@@ -600,10 +792,19 @@ const SetupWizardView = {
     try {
       const result = await Platform.provisionOrg({
         ...this._data.org,
-        branches: this._data.branches,
+        setupCompleted: this._data.setupPlan === 'now',
+        branches,
         roles: this._data.roles,
-        glAccounts: this._data.glAccounts,
-        staffUsers: this._data.staffUsers
+        staffUsers: this._data.staffUsers,
+        members: importData.members,
+        transactions: importData.transactions,
+        glAccounts: importData.glAccounts.length ? importData.glAccounts : this._data.glAccounts,
+        openingBalances: importData.openingBalances,
+        migrationBatchId: importData.migrationRecords.length ? crypto.randomUUID() : null,
+        migrationSourceFiles: importData.sourceFiles,
+        migrationRowCounts: SetupImport.getMigrationControls(importData).countByType,
+        migrationControlTotals: migrationControls,
+        migrationRecords: this._data.importMode === 'full' ? importData.migrationRecords : []
       });
 
       this._provisionedSchema = result.schemaName;

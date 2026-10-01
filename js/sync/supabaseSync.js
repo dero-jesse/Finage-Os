@@ -11,8 +11,8 @@
  *      store.save() and store.saveQuiet() call.
  *   2. HEARTBEAT PULL: Automated fetch every 60 seconds (1 minute) to
  *      merge remote updates into local state.
- *   3. FIRST BOOT SEED: If remote database is unseeded/empty, pushes
- *      institutional baseline seed data automatically to Supabase.
+ *   3. TENANT ISOLATION: Pulls canonical records only from the selected
+ *      organization's schema; demo defaults are never seeded into a tenant.
  *   4. STATUS BADGE: Live header indicator (Synced, Syncing, Offline, Error)
  *      with on-click instant sync and toast notification.
  *   5. NO ICONS: Pure typographic styling matching Finage OS aesthetic.
@@ -350,11 +350,109 @@ const SupabaseSync = (() => {
       _lastSync = new Date().toISOString();
       _connected = true;
       setStatus('synced');
+      return true;
     } catch (e) {
       console.warn('[SyncEngine] pullAll error:', e.message);
       setStatus('error');
       _connected = false;
+      return false;
     }
+  }
+
+  async function applyTenantSetup(organization, importData, setupCompleted = true) {
+    if (!isAvailable() || !tenantSchemaName() || !window.Platform?.context?.currentOrgId) {
+      throw new Error('Select an organization and connect to Supabase before saving setup.');
+    }
+
+    const payload = {
+      ...organization,
+      branches: importData.branches || [],
+      glAccounts: importData.glAccounts || [],
+      members: importData.members || [],
+      transactions: importData.transactions || [],
+      openingBalances: importData.openingBalances || [],
+      migrationBatchId: importData.migrationBatchId || null,
+      migrationSourceFiles: importData.migrationSourceFiles || importData.sourceFiles || [],
+      migrationRowCounts: importData.migrationRowCounts || {},
+      migrationControlTotals: importData.migrationControlTotals || {},
+      migrationRecords: importData.migrationRecords || []
+    };
+    const { data: updatedOrg, error } = await db().rpc('apply_tenant_setup', {
+      p_org_id: window.Platform.context.currentOrgId,
+      p_org_data: payload,
+      p_setup_completed: setupCompleted
+    });
+    if (error) throw new Error(`Could not save organization setup: ${error.message}`);
+    if (!updatedOrg) throw new Error('Organization setup was not saved.');
+
+    window.Platform.context.currentOrg = updatedOrg;
+    window.Platform.context.organizations = window.Platform.context.organizations.map(org =>
+      org.id === updatedOrg.id ? updatedOrg : org
+    );
+    const state = (_storeRef && _storeRef.state) || (window.store && store.state);
+    if (state) {
+      state.institution.name = updatedOrg.name;
+      state.institution.type = updatedOrg.type;
+      state.institution.baseCurrency = updatedOrg.base_currency || 'UGX';
+      state.institution.financialYear = updatedOrg.financial_year || '2026';
+      state.institution.regulatoryBody = updatedOrg.regulatory_body || '';
+      state.institution.regulatoryMinLiquidityRatio = Number(updatedOrg.min_liquidity_ratio) || 15;
+      state.institution.setupCompleted = updatedOrg.setup_completed !== false;
+      const refreshed = await pullAll(state);
+      if (!refreshed) throw new Error('Setup was saved, but tenant data could not be refreshed. Reload the page to see the changes.');
+    }
+    return updatedOrg;
+  }
+
+  async function cleanTenantOperationalData() {
+    if (!isAvailable() || !tenantSchemaName()) {
+      throw new Error('Select an organization and connect to Supabase before cleaning operational data.');
+    }
+
+    const [branchesResult, glResult] = await Promise.all([
+      tenantTable('branches').select('id, tillBalances'),
+      tenantTable('general_ledger').select('code')
+    ]);
+    if (branchesResult.error) throw branchesResult.error;
+    if (glResult.error) throw glResult.error;
+
+    const deletes = await Promise.all([
+      tenantTable('audit_trail').delete().neq('id', '__keepall__'),
+      tenantTable('transactions').delete().neq('id', '__keepall__'),
+      tenantTable('members').delete().neq('id', '__keepall__')
+    ]);
+    const deleteError = deletes.find(result => result.error)?.error;
+    if (deleteError) throw deleteError;
+
+    const glReset = await tenantTable('general_ledger')
+      .update({ balance: 0 })
+      .not('code', 'is', null);
+    if (glReset.error) throw glReset.error;
+
+    for (const branch of branchesResult.data || []) {
+      const tillBalances = (branch.tillBalances || []).map(till => ({
+        ...till,
+        balance: 0,
+        status: 'Pending Open'
+      }));
+      const branchReset = await tenantTable('branches')
+        .update({
+          cashInVault: 0,
+          reconciliationDiscrepancy: 0,
+          tillBalances,
+          lastReconciledAt: new Date().toISOString()
+        })
+        .eq('id', branch.id);
+      if (branchReset.error) throw branchReset.error;
+    }
+
+    return {
+      members: 'cleared',
+      transactions: 'cleared',
+      auditTrail: 'cleared',
+      ledgerBalances: 'zeroed',
+      branchCash: 'zeroed'
+    };
   }
 
   // --- Realtime Subscription ---
@@ -509,6 +607,8 @@ const SupabaseSync = (() => {
     markDirty,
     forcePush,
     forcePull,
+    cleanTenantOperationalData,
+    applyTenantSetup,
     pushAll,
     pullAll,
     sanitizeMember,

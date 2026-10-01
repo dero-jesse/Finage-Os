@@ -7,7 +7,13 @@ const ExportService = {
    * Triggers a download of a CSV formatted string
    */
   downloadCSV(filename, csvContent) {
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const organizationName = window.store?.state?.institution?.name || 'Organization';
+    const lines = String(csvContent).replace(/\r\n/g, '\n').split('\n');
+    const documentTitle = lines.shift() || 'Operational report';
+    const body = lines.filter(line => !/^\s*(institution|reporting entity)\s*:/i.test(line)).join('\r\n');
+    const escapedOrganization = `"${organizationName.replace(/"/g, '""')}"`;
+    const stampedContent = `${documentTitle}\r\nOrganization: ${escapedOrganization}\r\n${body}`;
+    const blob = new Blob([stampedContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
     const url = URL.createObjectURL(blob);
     link.setAttribute('href', url);

@@ -13,6 +13,7 @@ const App = {
     this.reportsMount = document.getElementById('reports-modal-mount');
     this.aiWidgetMount = document.getElementById('ai-widget-mount');
     this.clientModalMount = document.getElementById('client-selection-modal-mount');
+    this.orgSetupMount = document.getElementById('org-setup-mount');
     this.toastShelf = document.getElementById('toast-shelf'); // required by showToast
     this.portalDrawer = document.getElementById('portal-nav-drawer');
     this.utilityDrawer = document.getElementById('utility-menu-drawer');
@@ -44,6 +45,7 @@ const App = {
     if (this.clientModalMount) {
       ClientSelectionModalView.renderModal(this.clientModalMount, store.state);
     }
+    if (this.orgSetupMount) OrganizationSetupView.renderModal(this.orgSetupMount, store.state);
 
     // Setup Global Input Hub, User Mgmt & Quick Simulation Actions
     this.bindQuickActions();
@@ -62,10 +64,15 @@ const App = {
       ReportsView.renderModal(this.reportsMount, state);
     }
 
-    // 0. Update Brand Info dynamically
+    // 0. Keep product branding independent of the active organization
     const brandTitle = document.getElementById('brand-title-display');
     if (brandTitle) {
-      brandTitle.innerHTML = `${state.institution.name.split(' ')[0].toUpperCase()} OS`;
+      brandTitle.textContent = 'FINAGE OS';
+    }
+    const organizationTitle = document.getElementById('organization-title-display');
+    if (organizationTitle) {
+      organizationTitle.textContent = state.institution?.name || 'Select organization';
+      organizationTitle.title = state.institution?.name || '';
     }
 
     // 1. Update Header Role Buttons Active State & Enforce RBAC
@@ -136,6 +143,8 @@ const App = {
       }
 
       this.renderWorkspaceShell(state);
+      const setupButton = this.viewport.querySelector('#btn-org-setup-start');
+      if (setupButton) setupButton.addEventListener('click', () => OrganizationSetupView.open());
       const workspaceBody = this.viewport.querySelector('#workspace-body');
       if (!workspaceBody) return;
       switch (state.currentRole) {
@@ -174,6 +183,9 @@ const App = {
     if (this.clientModalMount) {
       ClientSelectionModalView.renderModal(this.clientModalMount, state);
     }
+    if (this.orgSetupMount && !this.orgSetupMount.querySelector('#org-setup-modal')) {
+      OrganizationSetupView.renderModal(this.orgSetupMount, state);
+    }
     
     // 6. Render AI Widget if authenticated
     if (this.aiWidgetMount) {
@@ -193,6 +205,13 @@ const App = {
       board: 'Board',
       credit: 'Credit'
     }[currentRole] || 'Operations';
+    const activeOrg = window.Platform?.getActiveOrg();
+    const currentUser = store.getCurrentUser();
+    const canManageOrg = currentUser && UserManagementEngine.getUserRoles(state, currentUser.id)
+      .some(role => role.permissions.includes('MANAGE_USERS'));
+    const setupNotice = activeOrg?.setup_completed === false && canManageOrg
+      ? `<section style="display:flex;align-items:center;justify-content:space-between;gap:1rem;padding:.75rem 1rem;background:#fffbeb;border-bottom:1px solid #fcd34d;color:#78350f;"><div><strong style="font-size:.8rem;">Organization setup is incomplete</strong><div style="font-size:.72rem;margin-top:2px;">Add branches, import existing members, balances, loans, or transaction history.</div></div><button id="btn-org-setup-start" class="btn btn-secondary btn-sm" type="button">Continue Setup</button></section>`
+      : '';
 
     this.viewport.innerHTML = `
       <div class="workspace-shell">
@@ -206,6 +225,7 @@ const App = {
             <span class="workspace-pill workspace-pill--highlight">${portalName}</span>
           </div>
         </header>
+        ${setupNotice}
         <div id="workspace-body" class="workspace-body"></div>
       </div>
     `;
@@ -325,7 +345,8 @@ const App = {
         { name: 'Overview', role: 'board' }
       ]},
       { label: 'Administration', items: [
-        { name: 'Portal Menu', action: 'users' }
+        { name: 'Users & Access', action: 'users' },
+        { name: 'Organization Setup', action: 'org-setup' }
       ]},
       { label: 'Reports', items: [
         { name: 'Portal Menu', action: 'reports' }
@@ -358,6 +379,8 @@ const App = {
           ReportsView.open();
         } else if (action === 'users') {
           UserManagementView.open();
+        } else if (action === 'org-setup') {
+          OrganizationSetupView.open();
         }
         this.closeAllDrawers();
       });
@@ -371,6 +394,7 @@ const App = {
     const items = [
       { label: 'Input Hub', action: () => InputModalView.open() },
       { label: 'Users', action: () => UserManagementView.open() },
+      { label: 'Organization Setup', action: () => OrganizationSetupView.open() },
       { label: 'Reports', action: () => ReportsView.open() },
       { label: 'Mobile Inflow', action: () => {
         const simAmount = 250000;
@@ -386,9 +410,13 @@ const App = {
         App.showToast(`Simulated +${Formatter.money(simAmount)} Bulk M-Pesa C2B Inflow. Instant GL Dr 1040 / Cr 2010 posted.`, 'success');
       } },
       { label: 'Reset Data', action: () => {
-        if (confirm('Reset Finage OS to v3 institutional baseline seed data?')) {
-          store.resetState();
-          this.showToast('System reset to v3 institutional baseline.', 'info');
+        const tenantActive = !!window.Platform?.context?.currentOrgSchema;
+        const prompt = tenantActive
+          ? 'Clear this organization\'s local operational cache and reload its cloud data? Cloud records will not be deleted.'
+          : 'Reset Finage OS to v3 institutional baseline demo data?';
+        if (confirm(prompt)) {
+          const mode = store.resetState();
+          this.showToast(mode === 'tenant' ? 'Organization cache cleared; loading its cloud data.' : 'System reset to v3 institutional demo data.', 'info');
         }
       } },
       { label: 'Sign Out', action: async () => {
@@ -629,9 +657,13 @@ const App = {
     const btnReset = document.getElementById('btn-reset-data');
     if (btnReset) {
       btnReset.addEventListener('click', () => {
-        if (confirm('Reset Finage OS to v3 institutional baseline seed data?')) {
-          store.resetState();
-          this.showToast('System reset to v3 institutional baseline.', 'info');
+        const tenantActive = !!window.Platform?.context?.currentOrgSchema;
+        const prompt = tenantActive
+          ? 'Clear this organization\'s local operational cache and reload its cloud data? Cloud records will not be deleted.'
+          : 'Reset Finage OS to v3 institutional baseline demo data?';
+        if (confirm(prompt)) {
+          const mode = store.resetState();
+          this.showToast(mode === 'tenant' ? 'Organization cache cleared; loading its cloud data.' : 'System reset to v3 institutional demo data.', 'info');
         }
       });
     }

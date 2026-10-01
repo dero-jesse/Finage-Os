@@ -502,7 +502,14 @@ const UserManagementView = {
         const currentUser = store.getCurrentUser();
         if (!currentUser) { if (errEl) { errEl.textContent = 'No active session.'; errEl.style.display = 'block'; } return; }
 
-        if (!confirm('This will permanently delete all demo members, transactions, and audit trail from Supabase, and zero all GL balances.\n\nStaff users, roles, and branches are preserved.\n\nThis cannot be undone. Proceed?')) return;
+        const activeOrg = window.Platform?.getActiveOrg();
+        const activeSchema = window.Platform?.context?.currentOrgSchema;
+        if (!activeOrg || !activeSchema) {
+          if (errEl) { errEl.textContent = 'No active organization selected.'; errEl.style.display = 'block'; }
+          return;
+        }
+
+        if (!confirm(`Permanently clear operational data for ${activeOrg.name} only?\n\nMembers, transactions, and audit history will be deleted. GL and branch cash balances will be zeroed. This browser's organization-specific module data, including workflows, facilities, investments, expenses, alerts, and operational balances, will also be cleared.\n\nStaff users, roles, branches, and GL accounts will be preserved. This cannot be undone.`)) return;
 
         btnGoLive.disabled = true;
         btnGoLive.textContent = 'Executing…';
@@ -520,37 +527,10 @@ const UserManagementView = {
             }
           }
 
-          // Delete operational tables only — preserve users, roles, branches, general_ledger structure
-          await window.supabase.from('audit_trail').delete().neq('id', 'AUD-GOLIVE-' + new Date().toISOString().slice(0,10).replace(/-/g,''));
-          await window.supabase.from('transactions').delete().neq('id', '__keepall__');
-          await window.supabase.from('members').delete().neq('id', '__keepall__');
+          await window.SupabaseSync.cleanTenantOperationalData();
+          store.prepareTenantState(activeSchema, true);
 
-          // Zero GL balances
-          const { data: glRows } = await window.supabase.from('general_ledger').select('code');
-          if (glRows) {
-            for (const row of glRows) {
-              await window.supabase.from('general_ledger').update({ balance: 0 }).eq('code', row.code);
-            }
-          }
-
-          // Insert go-live audit marker
-          await window.supabase.from('audit_trail').insert([{
-            id: 'AUD-GOLIVE-' + Date.now(),
-            timestamp: new Date().toISOString(),
-            userId: currentUser.id,
-            userName: currentUser.name,
-            action: 'SYSTEM_GO_LIVE',
-            module: 'System Administration',
-            entityId: 'INST-001',
-            description: 'Go-live clean slate executed. All demo data purged. Real operations commenced.',
-            ipAddress: '127.0.0.1',
-            glImpact: 'All GL balances zeroed — opening balances to be posted by Treasury'
-          }]);
-
-          // Clear local state
-          localStorage.removeItem(store.storageKey);
-
-          App.showToast('Go-live complete. All demo data cleared. Reloading…', 'success');
+          App.showToast(`Go-live clean slate complete for ${activeOrg.name}. Reloading…`, 'success');
           setTimeout(() => window.location.reload(), 1800);
         } catch (err) {
           console.error(err);

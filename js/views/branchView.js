@@ -48,31 +48,48 @@ const BranchView = {
       return { ...d, count, subTotal: count * d.value };
     });
 
-    container.innerHTML = `
-      <!-- View Header -->
-      <div class="view-header-row">
-        <div class="view-heading-group">
-          <h1>FOSA</h1>
-          <p>Branch oversight and approvals</p>
-        </div>
-        <div class="view-actions-group" style="display: flex; gap: 0.5rem; align-items: center;">
-          <div class="form-group" style="margin: 0; min-width: 240px;">
-            <select id="branch-select" class="form-control">
-              ${state.branches.map(b => `
-                <option value="${b.id}" ${b.id === currentBranch.id ? 'selected' : ''}>
-                  ${b.name} (${b.code})
-                </option>
-              `).join('')}
-            </select>
-          </div>
-          <button id="btn-submit-eod-reconciliation" class="btn btn-primary">
-            Submit Cash Sheet
-          </button>
-        </div>
+    const branchActions = `
+      <div class="form-group" style="margin: 0; min-width: 220px;">
+        <select id="branch-select" class="form-control">
+          ${state.branches.map(b => `
+            <option value="${b.id}" ${b.id === currentBranch.id ? 'selected' : ''}>
+              ${b.name} (${b.code})
+            </option>
+          `).join('')}
+        </select>
       </div>
+      <button id="btn-submit-eod-reconciliation" class="btn btn-primary btn-sm">
+        Submit Cash Sheet
+      </button>
+    `;
 
-      <!-- Summary Stat Cards -->
-      <div class="stat-grid">
+    container.innerHTML = `
+      <div class="workspace-module">
+        <div class="workspace-toolbar">
+          <div class="workspace-breadcrumb" data-label="FOSA">Overview</div>
+          <div class="workspace-actions">${branchActions}</div>
+        </div>
+
+        <div class="metric-strip">
+          <div class="metric-pill">
+            <span class="metric-label">Branch cash</span>
+            <span class="metric-value">${Formatter.money(totalBranchCash)}</span>
+          </div>
+          <div class="metric-pill">
+            <span class="metric-label">Vault custody</span>
+            <span class="metric-value">${Formatter.money(currentBranch.cashInVault)}</span>
+          </div>
+          <div class="metric-pill">
+            <span class="metric-label">Approvals</span>
+            <span class="metric-value">${pendingApprovals.length}</span>
+          </div>
+          <div class="metric-pill">
+            <span class="metric-label">Reconciler</span>
+            <span class="metric-value">${currentBranch.reconciliationDiscrepancy === 0 ? 'Clean' : 'Review'}</span>
+          </div>
+        </div>
+
+        <div class="stat-grid">
         <div class="stat-card">
           <div class="stat-card-header">
             <span class="stat-title">Branch Cash-in-Hand</span>
@@ -415,6 +432,7 @@ const BranchView = {
           </div>
 
         </div>
+      </div>
       </div>
     `;
 

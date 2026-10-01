@@ -32,17 +32,32 @@ const BoardView = {
     `;
 
     container.innerHTML = `
-      <!-- View Header -->
-      <div class="view-header-row">
-        <div class="view-heading-group">
-          <h1>Board Dashboard</h1>
-          <p>Liquidity, risk, and controls</p>
+      <div class="workspace-module">
+        <div class="workspace-toolbar">
+          <div class="workspace-breadcrumb" data-label="Board">Overview</div>
+          <div class="workspace-actions">${newActions}</div>
         </div>
-        <div class="view-actions-group">${newActions}</div>
-      </div>
 
-      <!-- Macro Executive Stat Grid -->
-      <div class="stat-grid">
+        <div class="metric-strip">
+          <div class="metric-pill">
+            <span class="metric-label">Liquid assets</span>
+            <span class="metric-value">${Formatter.money(balances.totalGrossLiquidAssets)}</span>
+          </div>
+          <div class="metric-pill">
+            <span class="metric-label">Liquidity ratio</span>
+            <span class="metric-value">${liquidity.statutoryRatio.toFixed(1)}%</span>
+          </div>
+          <div class="metric-pill">
+            <span class="metric-label">Net buffer</span>
+            <span class="metric-value">${Formatter.money(liquidity.surplusDeficitAmount)}</span>
+          </div>
+          <div class="metric-pill">
+            <span class="metric-label">RIM coverage</span>
+            <span class="metric-value">${segmentation.vipCount + segmentation.commercialCount}</span>
+          </div>
+        </div>
+
+        <div class="stat-grid">
         <div class="stat-card cyan">
           <div class="stat-card-header">
             <span class="stat-title">Aggregate Liquid Assets</span>
@@ -250,6 +265,7 @@ const BoardView = {
             </table>
           </div>
         </div>
+      </div>
       </div>
     `;
 

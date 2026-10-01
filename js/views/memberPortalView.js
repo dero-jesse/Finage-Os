@@ -30,23 +30,42 @@ const TellerDeskView = {
 
     if (!isTellerRole && !canReadAll) {
       container.innerHTML = `
-        <div class="view-header-row">
-          <div class="view-heading-group">
-            <h1>Teller Operations Desk</h1>
-            <p>Cash Counter & Physical Drawer Custody</p>
+        <div class="workspace-module">
+          <div class="workspace-toolbar">
+            <div class="workspace-breadcrumb" data-label="Teller">Overview</div>
+            <div class="workspace-actions">
+              <span class="solid-note">Restricted</span>
+            </div>
           </div>
-        </div>
-        <div class="glass-panel" style="max-width: 660px; margin: 3rem auto; padding: 2.5rem 2rem; text-align: center; border-top: 4px solid var(--accent-rose); box-shadow: 0 20px 40px rgba(0,0,0,0.12);">
-          <div style="width: 52px; height: 52px; margin: 0 auto 1.25rem; border-radius: 50%; background: var(--accent-rose-subtle); display: flex; align-items: center; justify-content: center; font-size: 1.4rem; color: var(--accent-rose); font-weight: 800; border: 1px solid var(--accent-rose);">
-            !
+
+          <div class="metric-strip">
+            <div class="metric-pill">
+              <span class="metric-label">Branch</span>
+              <span class="metric-value">${currentBranch ? currentBranch.name : 'Unassigned'}</span>
+            </div>
+            <div class="metric-pill">
+              <span class="metric-label">Status</span>
+              <span class="metric-value">Access denied</span>
+            </div>
           </div>
-          <h2 style="font-size: 1.2rem; font-weight: 800; color: var(--text-main); margin-bottom: 0.5rem;">Access Restricted: Assigned Tellers Only</h2>
-          <p style="font-size: 0.85rem; color: var(--text-dim); line-height: 1.6; margin-bottom: 1.5rem;">
-            The Counter Teller Desk is restricted exclusively to authorized branch cash tellers with active till custody.
-            Current operator <strong>${currentUser ? currentUser.name : 'Unknown'}</strong> is not assigned as a counter teller at ${currentBranch ? currentBranch.name : 'this branch'}.
-          </p>
-          <div style="display: inline-flex; align-items: center; gap: 0.6rem; padding: 0.75rem 1.25rem; background: var(--bg-surface-elevated); border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); font-size: 0.78rem; color: var(--text-muted);">
-            <span>Separation of Duties (SoD) Enforced · Front-office supervision is conducted under the <strong>FOSA</strong> tab.</span>
+
+          <div class="workspace-card" style="max-width: 760px; margin: 0 auto;">
+            <div class="workspace-card-header">
+              <div class="workspace-card-title">Assigned tellers only</div>
+            </div>
+            <div class="workspace-card-body" style="text-align: center; padding: 1.5rem 1rem;">
+              <div style="width: 52px; height: 52px; margin: 0 auto 1.25rem; border-radius: 50%; background: var(--accent-rose-subtle); display: flex; align-items: center; justify-content: center; font-size: 1.4rem; color: var(--accent-rose); font-weight: 800; border: 1px solid var(--accent-rose);">
+                !
+              </div>
+              <h2 style="font-size: 1.2rem; font-weight: 800; color: var(--text-main); margin-bottom: 0.5rem;">Access Restricted: Assigned Tellers Only</h2>
+              <p style="font-size: 0.85rem; color: var(--text-dim); line-height: 1.6; margin-bottom: 1.5rem;">
+                The Counter Teller Desk is restricted exclusively to authorized branch cash tellers with active till custody.
+                Current operator <strong>${currentUser ? currentUser.name : 'Unknown'}</strong> is not assigned as a counter teller at ${currentBranch ? currentBranch.name : 'this branch'}.
+              </p>
+              <div style="display: inline-flex; align-items: center; gap: 0.6rem; padding: 0.75rem 1.25rem; background: var(--bg-surface-elevated); border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); font-size: 0.78rem; color: var(--text-muted);">
+                <span>Separation of Duties (SoD) Enforced · Front-office supervision is conducted under the <strong>FOSA</strong> tab.</span>
+              </div>
+            </div>
           </div>
         </div>
       `;
@@ -60,40 +79,43 @@ const TellerDeskView = {
     }
 
     container.innerHTML = `
-      <!-- View Header -->
-      <div class="view-header-row">
-        <div class="view-heading-group">
-          <div style="display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap;">
-            <h1>Teller</h1>
-            <span class="badge badge-emerald" style="font-size: 0.72rem; padding: 3px 8px; font-weight: 800; letter-spacing: 0.05em;">
-              DRAWER: ${assignedTill ? assignedTill.tellerId : 'ASSIGNED TILL'}
-            </span>
-            <span class="badge badge-indigo" id="teller-header-float-badge" style="font-size: 0.72rem; padding: 3px 8px; font-weight: 800; font-family: var(--font-mono);">
-              FLOAT: ${assignedTill ? Formatter.money(assignedTill.balance) : '—'}
-            </span>
-            <span class="badge badge-muted" style="font-size: 0.72rem; padding: 3px 8px;">
-              ${currentBranch ? currentBranch.name : 'Branch'}
-            </span>
+      <div class="workspace-module">
+        <div class="workspace-toolbar">
+          <div class="workspace-breadcrumb" data-label="Teller">Overview</div>
+          <div class="workspace-actions">
+            ${profile ? `
+            <div class="form-group" style="margin: 0; min-width: 220px; padding: 0.45rem 0.75rem; border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); background: var(--bg-surface-elevated);">
+              <span style="font-weight: 700; font-size: 0.8rem; color: var(--text-main);">${profile.name}</span>
+              <span style="font-family: var(--font-mono); font-size: 0.7rem; color: var(--text-muted); margin-left: 0.4rem;">(${profile.id})</span>
+            </div>
+            <button id="btn-clear-client" class="btn btn-outline btn-sm" title="Clear Client & Start New Session">Reset</button>
+            ` : ''}
+            <button id="btn-quick-transact" class="btn btn-emerald btn-sm">
+              ${profile ? 'Switch Client' : 'Select Client'}
+            </button>
           </div>
-          <p>Operator: <strong>${currentUser ? currentUser.name : 'Teller'}</strong> · FOSA Counter Cash Desk</p>
         </div>
-        <div class="view-actions-group" style="display: flex; gap: 0.5rem; align-items: center;">
-          ${profile ? `
-          <div class="form-group" style="margin: 0; min-width: 240px; padding: 0.5rem 0.9rem; border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); background: var(--bg-surface-elevated);">
-            <span style="font-weight: 700; font-size: 0.85rem; color: var(--text-main);">${profile.name}</span>
-            <span style="font-family: var(--font-mono); font-size: 0.75rem; color: var(--text-muted); margin-left: 0.4rem;">(${profile.id})</span>
-          </div>
-          <button id="btn-clear-client" class="btn btn-outline" style="padding: 0.5rem 0.8rem; font-size: 0.8rem; font-weight: 700;" title="Clear Client & Start New Session">
-            Reset
-          </button>
-          ` : ''}
-          <button id="btn-quick-transact" class="btn btn-emerald" style="padding: 0.5rem 1.25rem; font-weight: 700;">
-            ${profile ? 'Switch Client' : 'Select Client'}
-          </button>
-        </div>
-      </div>
 
-      ${!profile ? `
+        <div class="metric-strip">
+          <div class="metric-pill">
+            <span class="metric-label">Drawer</span>
+            <span class="metric-value">${assignedTill ? assignedTill.tellerId : 'Assigned till'}</span>
+          </div>
+          <div class="metric-pill">
+            <span class="metric-label">Float</span>
+            <span class="metric-value">${assignedTill ? Formatter.money(assignedTill.balance) : '—'}</span>
+          </div>
+          <div class="metric-pill">
+            <span class="metric-label">Branch</span>
+            <span class="metric-value">${currentBranch ? currentBranch.name : 'Branch'}</span>
+          </div>
+          <div class="metric-pill">
+            <span class="metric-label">Operator</span>
+            <span class="metric-value">${currentUser ? currentUser.name : 'Teller'}</span>
+          </div>
+        </div>
+
+        ${!profile ? `
         <!-- No Member Selected: show today's teller session summary -->
         <div class="panel-grid">
           <div class="glass-panel col-12">

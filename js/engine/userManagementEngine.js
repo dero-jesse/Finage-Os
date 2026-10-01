@@ -78,6 +78,11 @@ const UserManagementEngine = {
       : roles.some(r => r.category === 'front-office')
         ? 'front-office'
         : (firstRole ? firstRole.category : null);
+
+    if (window.Platform) {
+      window.Platform.context.isPlatformSuperuser = user.email && user.email.toLowerCase() === 'superuser@finage.io';
+    }
+
     state.isAuthenticated = true;
     state.currentUserId = user.id;
     state.currentRole = preferredRoleCategory;

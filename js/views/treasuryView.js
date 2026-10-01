@@ -29,286 +29,216 @@ const TreasuryView = {
     });
 
     container.innerHTML = `
-      <!-- View Header -->
-      <div class="view-header-row">
-        <div class="view-heading-group">
-          <h1>Treasury, Multi-Ledger GL & Accounting Equation Engine</h1>
-          <p>Real-time enterprise General Ledger, double-entry balance validation, and multi-channel liquidity</p>
-        </div>
-        <div class="view-actions-group">
-          <button id="btn-validate-ledger-now" class="btn btn-outline" title="Trigger instant trial balance check across the entire ledger">
-            Verify Balance (Dr = Cr)
-          </button>
-          <button id="btn-run-parallel-eod" class="btn btn-secondary">
-            Run Parallel EOD
-          </button>
-          <button id="btn-export-trial-balance" class="btn btn-secondary">
-            Export Trial Balance
-          </button>
-          <button id="btn-export-balance-sheet" class="btn btn-primary">
-            Export Balance Sheet
-          </button>
-        </div>
-      </div>
-
-      <!-- Accounting Equation Compliance Banner (Layer 0 Built-in) -->
-      <div style="background: #ffffff; border: 2px solid var(--accent-green-dark); padding: 1rem 1.25rem; margin-bottom: 1.25rem; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem;">
-        <div style="display: flex; align-items: center; gap: 0.85rem;">
-          <div style="padding: 0.35rem 0.65rem; background: var(--accent-green-dark); color: #ffffff; font-size: 0.85rem; font-weight: 800; font-family: var(--font-mono);">
-            ${trialBalance.isBalanced ? 'BALANCE OK' : 'ATTENTION'}
-          </div>
-          <div>
-            <div style="font-size: 0.95rem; font-weight: 800; color: var(--accent-green-dark); display: flex; align-items: center; gap: 0.5rem; text-transform: uppercase;">
-              Accounting Equation: ${trialBalance.isBalanced ? 'COMPLIANT & BALANCED' : 'OUT OF BALANCE (BREAK DETECTED)'}
-              <span class="badge ${trialBalance.isBalanced ? 'badge-safe' : 'badge-danger'}">
-                ${trialBalance.isBalanced ? 'Assets = Liabilities + Equity + (Income - Expense)' : 'Variance Detected'}
-              </span>
-            </div>
-            <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.25rem; font-family: var(--font-mono);">
-              Net Assets [<strong>${Formatter.money(balanceSheet.netAssets)}</strong>] = Liabilities [<strong>${Formatter.money(balanceSheet.totalLiabilities)}</strong>] + Equity [<strong>${Formatter.money(balanceSheet.totalEquity)}</strong>] + Net Surplus [<strong>${Formatter.money(balanceSheet.netOperatingIncome)}</strong>] · Variance: <strong>${trialBalance.variance === 0 ? '$0.00' : Formatter.money(trialBalance.variance)}</strong>
-            </div>
-          </div>
-        </div>
-        <div style="display: flex; gap: 1rem; align-items: center;">
-          <div style="text-align: right;">
-            <div style="font-size: 0.7rem; color: var(--text-dim); text-transform: uppercase; font-weight: 700;">Total Balanced Leg Value</div>
-            <div style="font-family: var(--font-mono); font-size: 1.1rem; font-weight: 800; color: var(--accent-green-dark);">
-              Dr ${Formatter.money(trialBalance.totalDebits, true)} = Cr ${Formatter.money(trialBalance.totalCredits, true)}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Stat Widgets Grid -->
-      <div class="stat-grid">
-        <div class="stat-card">
-          <div class="stat-card-header">
-            <span class="stat-title">Total Gross Liquid Assets</span>
-          </div>
-          <div class="stat-value">${Formatter.money(balances.totalGrossLiquidAssets)}</div>
-          <div class="stat-footer">
-            <span>GL 1010 + 1020 + 1030 + 1040 + 1050</span>
-            <span class="badge">Real-time Books</span>
-          </div>
-        </div>
-
-        <div class="stat-card">
-          <div class="stat-card-header">
-            <span class="stat-title">SASRA / CBK Liquidity Ratio</span>
-          </div>
-          <div class="stat-value">
-            ${liquidity.statutoryRatio.toFixed(1)}%
-          </div>
-          <div class="stat-footer">
-            <span>Deposits: ${Formatter.money(liquidity.totalDeposits, true)} (GL 2010-2030)</span>
-            <span class="badge">
-              ${liquidity.complianceStatus}
-            </span>
-          </div>
-        </div>
-
-        <div class="stat-card">
-          <div class="stat-card-header">
-            <span class="stat-title">Current Operating Surplus (P&L)</span>
-          </div>
-          <div class="stat-value">${Formatter.money(incomeStatement.netSurplus)}</div>
-          <div class="stat-footer">
-            <span>Income: ${Formatter.money(incomeStatement.totalIncome, true)} - Expenses</span>
-            <span class="badge">Real-time Surplus</span>
-          </div>
-        </div>
-
-        <div class="stat-card">
-          <div class="stat-card-header">
-            <span class="stat-title">Balance Validation Control</span>
-          </div>
-          <div class="stat-value">
-            ${trialBalance.isBalanced ? 'Balanced' : 'Break Flagged'}
-          </div>
-          <div class="stat-footer">
-            <span>Debits = Credits (${exceptions.length} audit records)</span>
-            <span class="badge">Zero Variance</span>
-          </div>
-        </div>
-      </div>
-
-      <!-- Real-Time General Ledger (GL) & Chart of Accounts Inspector -->
-      <div class="panel-grid" style="margin-top: 1rem;">
-        <div class="glass-panel col-12">
-          <div class="panel-header" style="flex-wrap: wrap; gap: 0.5rem;">
-            <div class="panel-title-wrap">
-              <span class="panel-title">Layer 0 Chart of Accounts (COA) & Double-Entry Ledger Inspector</span>
-            </div>
-            <div style="display: flex; gap: 0.4rem; align-items: center; flex-wrap: wrap;">
-              <span style="font-size: 0.75rem; color: var(--text-dim); margin-right: 0.3rem;">Filter Category:</span>
-              <button class="btn btn-sm btn-coa-filter ${this.activeCOAFilter === 'all' ? 'btn-primary' : 'btn-outline'}" data-filter="all">All (${trialBalance.glDetails.length})</button>
-              <button class="btn btn-sm btn-coa-filter ${this.activeCOAFilter === 'assets' ? 'btn-primary' : 'btn-outline'}" data-filter="assets">Assets</button>
-              <button class="btn btn-sm btn-coa-filter ${this.activeCOAFilter === 'liabilities' ? 'btn-primary' : 'btn-outline'}" data-filter="liabilities">Liabilities</button>
-              <button class="btn btn-sm btn-coa-filter ${this.activeCOAFilter === 'equity' ? 'btn-primary' : 'btn-outline'}" data-filter="equity">Equity</button>
-              <button class="btn btn-sm btn-coa-filter ${this.activeCOAFilter === 'income' ? 'btn-primary' : 'btn-outline'}" data-filter="income">Income</button>
-              <button class="btn btn-sm btn-coa-filter ${this.activeCOAFilter === 'expenses' ? 'btn-primary' : 'btn-outline'}" data-filter="expenses">Expenses</button>
-            </div>
-          </div>
-
-          <div class="table-responsive" style="max-height: 420px;">
-            <table class="data-table">
-              <thead>
-                <tr>
-                  <th>GL Code</th>
-                  <th>Account Title</th>
-                  <th>COA Category / Type</th>
-                  <th>Normal Balance</th>
-                  <th>Equation Side</th>
-                  <th style="text-align: right;">Debit (${Formatter.currencySymbol})</th>
-                  <th style="text-align: right;">Credit (${Formatter.currencySymbol})</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${filteredAccounts.map(g => {
-                  const isAsset = (g.category || g.type || '').toLowerCase().includes('asset');
-                  const isLiab = (g.category || g.type || '').toLowerCase().includes('liabilit');
-                  const isEquity = (g.category || g.type || '').toLowerCase().includes('equity');
-                  const isIncome = (g.category || g.type || '').toLowerCase().includes('income') || (g.category || '').toLowerCase().includes('revenue');
-                  const badgeClass = isAsset ? 'badge-cyan' : (isLiab ? 'badge-amber' : (isEquity ? 'badge-purple' : (isIncome ? 'badge-emerald' : 'badge-rose')));
-                  const equationSide = (isAsset || (g.category || '').toLowerCase().includes('expense')) ? 'Left (A + X)' : 'Right (L + E + I)';
-
-                  return `
-                    <tr>
-                      <td class="cell-mono" style="font-weight: 700; color: var(--accent-cyan);">${g.code}</td>
-                      <td class="cell-bold">${g.name} ${g.isContra ? '<span class="badge badge-rose" style="font-size:0.65rem; padding:0.1rem 0.4rem;">Contra-Asset</span>' : ''}</td>
-                      <td><span class="badge ${badgeClass}">${g.category || g.type}</span></td>
-                      <td><span class="badge ${g.normal === 'Debit' ? 'badge-cyan' : 'badge-amber'}">${g.normal}</span></td>
-                      <td style="font-size: 0.75rem; color: var(--text-dim);">${equationSide}</td>
-                      <td class="cell-mono" style="text-align: right; color: ${g.debitVal > 0 ? 'var(--text-main)' : 'var(--text-dim)'};">
-                        ${g.debitVal > 0 ? Formatter.money(g.debitVal) : '-'}
-                      </td>
-                      <td class="cell-mono" style="text-align: right; color: ${g.creditVal > 0 ? 'var(--text-main)' : 'var(--text-dim)'};">
-                        ${g.creditVal > 0 ? Formatter.money(g.creditVal) : '-'}
-                      </td>
-                    </tr>
-                  `;
-                }).join('')}
-              </tbody>
-              <tfoot>
-                <tr style="background: rgba(255,255,255,0.04); font-weight: 800; border-top: 2px solid var(--border-subtle);">
-                  <td colspan="5" style="text-align: right; text-transform: uppercase; font-size: 0.8rem; letter-spacing: 0.05em;">
-                    Total General Ledger Leg Balances:
-                  </td>
-                  <td class="cell-mono" style="text-align: right; color: var(--accent-cyan); font-size: 0.95rem;">
-                    ${Formatter.money(trialBalance.totalDebits)}
-                  </td>
-                  <td class="cell-mono" style="text-align: right; color: var(--accent-cyan); font-size: 0.95rem;">
-                    ${Formatter.money(trialBalance.totalCredits)}
-                  </td>
-                </tr>
-              </tfoot>
-            </table>
-          </div>
-        </div>
-      </div>
-
-      <!-- Balance Validation Exception Log (Layer 7 Audit & Compliance) & Multi-Channel Floats -->
-      <div class="panel-grid" style="margin-top: 1.25rem;">
-        <!-- Trial Balance Exception Log -->
-        <div class="glass-panel col-6">
-          <div class="panel-header">
-            <div class="panel-title-wrap">
-              <span class="panel-title">Layer 7 Balance Validation & Exception Log</span>
-            </div>
-            <button id="btn-export-tb-exceptions" class="btn btn-outline btn-sm" title="Export validation exception records to CSV">
-              Export Exceptions CSV
+      <div class="workspace-module">
+        <div class="workspace-toolbar">
+          <div class="workspace-breadcrumb" data-label="Treasury">Overview</div>
+          <div class="workspace-actions">
+            <button id="btn-validate-ledger-now" class="btn btn-outline btn-sm" title="Trigger instant trial balance check across the entire ledger">
+              Verify Ledger
+            </button>
+            <button id="btn-run-parallel-eod" class="btn btn-secondary btn-sm">
+              Parallel EOD
+            </button>
+            <button id="btn-export-trial-balance" class="btn btn-secondary btn-sm">
+              Trial Balance
+            </button>
+            <button id="btn-export-balance-sheet" class="btn btn-primary btn-sm">
+              Balance Sheet
             </button>
           </div>
+        </div>
 
-          <div class="table-responsive" style="max-height: 280px;">
-            <table class="data-table">
-              <thead>
-                <tr>
-                  <th>Audit Ref</th>
-                  <th>Timestamp</th>
-                  <th>Trigger Source</th>
-                  <th>Variance</th>
-                  <th>Integrity Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${exceptions.map(e => `
-                  <tr>
-                    <td class="cell-mono" style="font-size: 0.75rem;">${e.id}</td>
-                    <td class="cell-mono" style="font-size: 0.7rem; color: var(--text-dim);">${Formatter.dateTime(e.timestamp)}</td>
-                    <td style="font-size: 0.75rem;">${e.triggerSource}</td>
-                    <td class="cell-mono" style="color: ${e.debitCreditVariance === 0 ? 'var(--accent-emerald)' : 'var(--accent-rose)'}; font-weight: 700;">
-                      $${e.debitCreditVariance.toFixed(2)}
-                    </td>
-                    <td>
-                      <span class="badge ${e.status === 'BALANCED' ? 'badge-emerald' : 'badge-rose'}">
-                        ${e.status}
-                      </span>
-                    </td>
-                  </tr>
+        <div class="metric-strip">
+          <div class="metric-pill">
+            <span class="metric-label">Liquid Assets</span>
+            <span class="metric-value">${Formatter.money(balances.totalGrossLiquidAssets)}</span>
+          </div>
+          <div class="metric-pill">
+            <span class="metric-label">Liquidity Ratio</span>
+            <span class="metric-value">${liquidity.statutoryRatio.toFixed(1)}%</span>
+          </div>
+          <div class="metric-pill">
+            <span class="metric-label">Net Surplus</span>
+            <span class="metric-value">${Formatter.money(incomeStatement.netSurplus)}</span>
+          </div>
+          <div class="metric-pill">
+            <span class="metric-label">Equation</span>
+            <span class="metric-value">${trialBalance.isBalanced ? 'Balanced' : 'Break'}</span>
+          </div>
+          <div class="metric-pill">
+            <span class="metric-label">Buffer</span>
+            <span class="metric-value">${Formatter.money(liquidity.surplusDeficitAmount)}</span>
+          </div>
+        </div>
+
+        <div class="workspace-grid">
+          <section class="workspace-card workspace-card--wide">
+            <div class="workspace-card-header">
+              <div class="workspace-card-title">Liquidity Position</div>
+              <span class="solid-note">${liquidity.complianceStatus}</span>
+            </div>
+            <div class="workspace-card-body">
+              <div class="hero-figure">
+                <div>
+                  <div class="hero-number">${liquidity.statutoryRatio.toFixed(1)}%</div>
+                  <div class="hero-caption">Statutory liquidity ratio</div>
+                </div>
+                <div class="hero-caption">Buffer ${Formatter.money(liquidity.surplusDeficitAmount)} • Deposits ${Formatter.money(liquidity.totalDeposits)}</div>
+              </div>
+              <div class="inline-list">
+                <div class="inline-item">
+                  <span class="inline-item-label">Gross liquid</span>
+                  <span class="inline-item-value">${Formatter.money(balances.totalGrossLiquidAssets)}</span>
+                </div>
+                <div class="inline-item">
+                  <span class="inline-item-label">Net assets</span>
+                  <span class="inline-item-value">${Formatter.money(balanceSheet.netAssets)}</span>
+                </div>
+                <div class="inline-item">
+                  <span class="inline-item-label">Variance</span>
+                  <span class="inline-item-value">${Formatter.money(trialBalance.variance)}</span>
+                </div>
+                <div class="inline-item">
+                  <span class="inline-item-label">Status</span>
+                  <span class="inline-item-value">${trialBalance.isBalanced ? 'Balanced' : 'Flagged'}</span>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="workspace-card workspace-card--side">
+            <div class="workspace-card-header">
+              <div class="workspace-card-title">Accounting check</div>
+              <span class="solid-note">Live</span>
+            </div>
+            <div class="workspace-card-body">
+              <div class="summary-grid">
+                <div class="summary-chip">
+                  <strong>${Formatter.money(trialBalance.totalDebits)}</strong>
+                  <span>Debits</span>
+                </div>
+                <div class="summary-chip">
+                  <strong>${Formatter.money(trialBalance.totalCredits)}</strong>
+                  <span>Credits</span>
+                </div>
+                <div class="summary-chip">
+                  <strong>${trialBalance.isBalanced ? '0.00' : Formatter.money(trialBalance.variance)}</strong>
+                  <span>Variance</span>
+                </div>
+              </div>
+              <div class="hero-caption">${trialBalance.isBalanced ? 'Accounting equation is compliant and balanced across the active ledger.' : 'Variance detected; exception log requires review.'}</div>
+            </div>
+          </section>
+        </div>
+
+        <div class="workspace-grid">
+          <section class="workspace-card workspace-card--wide">
+            <div class="workspace-card-header">
+              <div class="workspace-card-title">General ledger snapshot</div>
+              <div class="workspace-actions">
+                <button class="btn btn-sm btn-coa-filter ${this.activeCOAFilter === 'all' ? 'btn-primary' : 'btn-outline'}" data-filter="all">All</button>
+                <button class="btn btn-sm btn-coa-filter ${this.activeCOAFilter === 'assets' ? 'btn-primary' : 'btn-outline'}" data-filter="assets">Assets</button>
+                <button class="btn btn-sm btn-coa-filter ${this.activeCOAFilter === 'liabilities' ? 'btn-primary' : 'btn-outline'}" data-filter="liabilities">Liabilities</button>
+              </div>
+            </div>
+            <div class="workspace-card-body">
+              <div class="table-responsive" style="max-height: 260px;">
+                <table class="mini-table">
+                  <thead>
+                    <tr>
+                      <th>GL</th>
+                      <th>Account</th>
+                      <th>Type</th>
+                      <th class="text-right">Debit</th>
+                      <th class="text-right">Credit</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${filteredAccounts.slice(0, 8).map(g => `
+                      <tr>
+                        <td>${g.code}</td>
+                        <td>${g.name}</td>
+                        <td><span class="badge badge-emerald">${g.category || g.type}</span></td>
+                        <td>${g.debitVal > 0 ? Formatter.money(g.debitVal) : '-'}</td>
+                        <td>${g.creditVal > 0 ? Formatter.money(g.creditVal) : '-'}</td>
+                      </tr>
+                    `).join('')}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </section>
+
+          <section class="workspace-card workspace-card--side">
+            <div class="workspace-card-header">
+              <div class="workspace-card-title">Delivery channels</div>
+              <span class="solid-note">${channelSummary.channels.length} Live</span>
+            </div>
+            <div class="workspace-card-body">
+              ${channelSummary.channels.slice(0, 4).map(ch => `
+                <div class="inline-item">
+                  <span class="inline-item-label">${ch.name}</span>
+                  <span class="inline-item-value">${Formatter.money(ch.liveBalance)}</span>
+                </div>
+              `).join('')}
+            </div>
+          </section>
+        </div>
+
+        <div class="workspace-grid">
+          <section class="workspace-card workspace-card--wide">
+            <div class="workspace-card-header">
+              <div class="workspace-card-title">Maturity ladder</div>
+              <span class="solid-note">ALCO</span>
+            </div>
+            <div class="workspace-card-body">
+              <div class="chart-container" style="min-height: 220px;">
+                <canvas id="maturityLadderCanvas"></canvas>
+              </div>
+              <div class="maturity-bucket-row">
+                ${ladder.slice(0, 5).map(b => `
+                  <div class="maturity-bucket-item">
+                    <div class="bucket-info">
+                      <span class="bucket-label">${b.bucket}</span>
+                      <span class="bucket-sub">Coverage: ${b.mismatchRatio.toFixed(0)}%</span>
+                    </div>
+                    <div class="bucket-stats">
+                      <div class="gap-indicator ${b.isPositive ? 'gap-positive' : 'gap-negative'}">
+                        ${b.isPositive ? '+' : ''}${Formatter.money(b.netGap, true)}
+                      </div>
+                    </div>
+                  </div>
                 `).join('')}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        <!-- Multi-Channel Delivery Float & Settlement Liquidity -->
-        <div class="glass-panel col-6">
-          <div class="panel-header">
-            <div class="panel-title-wrap">
-              <span class="panel-title">Multi-Channel Delivery Float Network</span>
-            </div>
-            <span class="badge badge-cyan">${channelSummary.channels.length} Live Channels</span>
-          </div>
-
-          <div class="bank-cards-grid" style="grid-template-columns: 1fr 1fr; gap: 0.75rem;">
-            ${channelSummary.channels.map(ch => `
-              <div class="bank-card" style="padding: 0.75rem;">
-                <div class="bank-card-top" style="margin-bottom: 0.4rem;">
-                  <div>
-                    <div class="bank-name" style="font-size: 0.825rem;">${ch.name}</div>
-                    <div class="bank-acc-num" style="font-size: 0.68rem;">${ch.type} • ${ch.latencyMs}ms</div>
-                  </div>
-                  <span class="badge badge-emerald" style="font-size: 0.65rem;">${ch.status}</span>
-                </div>
-                <div class="bank-bal" style="font-size: 1.05rem;">${Formatter.money(ch.liveBalance)}</div>
-                <div style="font-size: 0.68rem; color: var(--text-dim); margin-top: 0.2rem;">
-                  Daily Turnover: ${Formatter.money(ch.dailyTurnover, true)}
-                </div>
               </div>
-            `).join('')}
-          </div>
-        </div>
-      </div>
-
-      <!-- Asset vs Liability Maturity Ladder Gap Profile -->
-      <div class="panel-grid" style="margin-top: 1.25rem;">
-        <div class="glass-panel col-12">
-          <div class="panel-header">
-            <div class="panel-title-wrap">
-              <span class="panel-title">Asset vs Liability Maturity Ladder Gap Profile (ALCO Compliance)</span>
             </div>
-            <span class="badge badge-cyan">Maturity Mismatch</span>
-          </div>
-          <div class="chart-container" style="min-height: 220px;">
-            <canvas id="maturityLadderCanvas"></canvas>
-          </div>
+          </section>
 
-          <div class="maturity-bucket-row" style="margin-top: 0.75rem;">
-            ${ladder.slice(0, 6).map(b => `
-              <div class="maturity-bucket-item">
-                <div class="bucket-info">
-                  <span class="bucket-label">${b.bucket}</span>
-                  <span class="bucket-sub">Coverage: ${b.mismatchRatio.toFixed(0)}%</span>
-                </div>
-                <div class="bucket-stats">
-                  <div class="gap-indicator ${b.isPositive ? 'gap-positive' : 'gap-negative'}">
-                    ${b.isPositive ? '+' : ''}${Formatter.money(b.netGap, true)}
-                  </div>
-                </div>
-              </div>
-            `).join('')}
-          </div>
+          <section class="workspace-card workspace-card--side">
+            <div class="workspace-card-header">
+              <div class="workspace-card-title">Exceptions</div>
+              <button id="btn-export-tb-exceptions" class="btn btn-outline btn-sm">Export</button>
+            </div>
+            <div class="workspace-card-body">
+              <table class="mini-table">
+                <thead>
+                  <tr>
+                    <th>Ref</th>
+                    <th>Variant</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${exceptions.slice(0, 4).map(e => `
+                    <tr>
+                      <td>${e.id}</td>
+                      <td>${Formatter.money(e.debitCreditVariance)}</td>
+                      <td><span class="badge ${e.status === 'BALANCED' ? 'badge-emerald' : 'badge-rose'}">${e.status}</span></td>
+                    </tr>
+                  `).join('')}
+                </tbody>
+              </table>
+            </div>
+          </section>
         </div>
       </div>
     `;

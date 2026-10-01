@@ -54,7 +54,10 @@ const LoginView = {
               QUICK ACCESS <span style="color: var(--accent-amber); font-weight: 800;">(offline only)</span>
             </div>
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.45rem;">
-              <button class="btn btn-secondary btn-sm btn-quick-login" data-email="admin@finage.co.ke" style="font-size: 0.68rem; justify-content: flex-start; text-align: left;">
+              <button class="btn btn-secondary btn-sm btn-quick-login" data-email="superuser@finage.io" style="font-size: 0.68rem; justify-content: flex-start; text-align: left;">
+                Platform Superuser
+              </button>
+              <button class="btn btn-secondary btn-sm btn-quick-login" data-email="admin@finage.co.ug" style="font-size: 0.68rem; justify-content: flex-start; text-align: left;">
                 Admin (System)
               </button>
               <button class="btn btn-secondary btn-sm btn-quick-login" data-email="caroline.wanjala@finage.co.ke" style="font-size: 0.68rem; justify-content: flex-start; text-align: left;">

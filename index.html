@@ -36,11 +36,10 @@
   <div id="app">
     <!-- Top Navigation Header -->
     <header class="top-header">
-      <div class="brand-section"
-        style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.25rem;">
-        <img src="images/logo.png" alt="Finage OS Logo" style="height: 36px; width: auto; object-fit: contain;">
-        <div class="brand-title" id="brand-title-display"
-          style="font-size: 0.85rem; letter-spacing: 0.05em; text-align: center;">
+      <div class="brand-section">
+        <button id="btn-open-portal-nav" class="header-btn icon-btn" type="button" aria-label="Open portal navigation">☰</button>
+        <img src="images/logo.png" alt="Finage OS Logo" style="height: 34px; width: auto; object-fit: contain;">
+        <div class="brand-title" id="brand-title-display">
           FINAGE OS
         </div>
       </div>
@@ -73,54 +72,45 @@
         </button>
       </nav>
 
-      <!-- Global Utility Actions & Universal Input Trigger -->
       <div class="header-actions">
-        <!-- AI/Sim/Test Controls (Optional) -->
-        <button id="btn-quick-deposit" class="btn btn-secondary btn-sm"
-          title="Simulate an instant Mobile-Money C2B bulk mobile deposit">
-          Mobile Inflow
+        <button id="btn-global-alerts" class="header-btn ghost-btn" type="button" aria-label="System alerts">Alerts</button>
+        <button id="sync-status-badge" class="header-btn sync-badge" title="Database Sync Protocol: Local cache synced with Supabase (Click to pull/push immediately)" type="button">
+          Synced
         </button>
 
-        <!-- Org Switcher (shown only to platform superusers with multiple orgs) -->
-        <button id="btn-org-switch" class="header-btn" title="Switch Organisation" style="display:none;"
-          onclick="if(typeof OrgSelectorView!=='undefined'){store.state.orgSelectorShown=true;store.notify();}">
-          🏦 Switch Org
-        </button>
-
-        <!-- Secondary Action: Data Input -->
-        <button id="btn-open-input-hub" class="btn btn-outline" title="Open the data input hub">
-          + Input
-        </button>
-
-        <div style="width: 1px; height: 24px; background: var(--border-medium); margin: 0 0.25rem;"></div>
-
-        <!-- User Controls Cluster -->
-        <!-- Active User Badge (Injected by app.js) -->
         <div id="active-user-badge" class="active-user-badge" title="Current active operator context">
           <!-- Populated dynamically -->
         </div>
 
-        <button id="btn-open-user-mgmt" class="header-btn" title="User Administration & Task Separation (RBAC)">
-          Users
-        </button>
-
-        <button id="btn-open-reports" class="header-btn" title="Admin reporting and export generation center">
-          Reports
-        </button>
-
-        <button id="btn-logout" class="header-btn" title="Sign Out">
-          Sign Out
-        </button>
-
-        <button id="sync-status-badge" class="header-btn sync-badge" title="Database Sync Protocol: Local cache synced with Supabase (Click to pull/push immediately)">
-          Local Only
-        </button>
-
-        <button id="btn-reset-data" class="header-btn" title="Reset system data to v3 baseline seeds">
-          Reset Data
-        </button>
+        <button id="btn-open-actions" class="header-btn" type="button" aria-label="Open actions menu">Actions ▾</button>
       </div>
     </header>
+
+    <aside id="portal-nav-drawer" class="portal-drawer" aria-hidden="true">
+      <div class="drawer-header">
+        <div>
+          <div class="drawer-kicker">Portals</div>
+          <h2>FINAGE OS</h2>
+        </div>
+        <button class="drawer-close" type="button" data-close-drawer="portal">Close</button>
+      </div>
+      <div class="drawer-body">
+        <div id="portal-drawer-list" class="drawer-stack"></div>
+      </div>
+    </aside>
+
+    <aside id="utility-menu-drawer" class="portal-drawer portal-drawer--utility" aria-hidden="true">
+      <div class="drawer-header">
+        <div>
+          <div class="drawer-kicker">Workspace</div>
+          <h2>Actions</h2>
+        </div>
+        <button class="drawer-close" type="button" data-close-drawer="utility">Close</button>
+      </div>
+      <div class="drawer-body">
+        <div id="utility-menu-list" class="drawer-stack"></div>
+      </div>
+    </aside>
 
     <!-- Institutional Liquidity & Compliance Ticker Bar -->
     <section id="liquidity-ticker-bar" class="liquidity-ticker-bar" aria-label="Real-time Financial Ticker">

@@ -79,6 +79,19 @@ class FinageStore {
       // --- Institutional Users & Access Control Directory (RBAC) ---
       users: [
         {
+          id: 'USR-000',
+          name: 'Platform Superuser',
+          email: 'superuser@finage.io',
+          roles: ['ROLE-ADMIN'],
+          branchId: 'br-01',
+          branchName: 'Head Office',
+          singleApprovalLimit: 10000000,
+          dailyApprovalLimit: 50000000,
+          status: 'Active',
+          mfaEnabled: true,
+          lastLogin: '2026-09-01T08:00:00'
+        },
+        {
           id: 'USR-001',
           name: 'System Admin',
           email: 'admin@finage.co.ug',

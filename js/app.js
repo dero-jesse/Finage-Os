@@ -14,6 +14,10 @@ const App = {
     this.aiWidgetMount = document.getElementById('ai-widget-mount');
     this.clientModalMount = document.getElementById('client-selection-modal-mount');
     this.toastShelf = document.getElementById('toast-shelf'); // required by showToast
+    this.portalDrawer = document.getElementById('portal-nav-drawer');
+    this.utilityDrawer = document.getElementById('utility-menu-drawer');
+
+    this.initPortalDrawers();
 
     // Bind Role Switcher Buttons
     this.roleButtons.forEach(btn => {
@@ -62,10 +66,6 @@ const App = {
     if (brandTitle) {
       brandTitle.innerHTML = `${state.institution.name.split(' ')[0].toUpperCase()} OS`;
     }
-    const brandSub = document.getElementById('brand-subtitle-display');
-    if (brandSub) {
-      brandSub.innerHTML = `${state.institution.type}`;
-    }
 
     // 1. Update Header Role Buttons Active State & Enforce RBAC
     const currentUser = store.getCurrentUser();
@@ -76,14 +76,12 @@ const App = {
       const btnRole = btn.dataset.role;
       const normalizedRole = btnRole === 'counter-ops' ? 'teller' : btnRole;
       
-      // Enforce RBAC Visibility
       if (canReadAll || currentRoleObjs.some(r => r.category === normalizedRole || (normalizedRole === 'teller' && (r.category === 'teller' || r.category === 'counter-ops')))) {
-        btn.style.display = 'flex'; // Show authorized tabs
+        btn.style.display = 'flex';
       } else {
-        btn.style.display = 'none'; // Hide unauthorized tabs
+        btn.style.display = 'none';
       }
 
-      // Update Active State
       const currentNormRole = state.currentRole === 'counter-ops' ? 'teller' : state.currentRole;
       if (normalizedRole === currentNormRole) {
         btn.classList.add('active');
@@ -92,80 +90,72 @@ const App = {
       }
     });
 
-    // 2. Enforce RBAC for User Management (System Admin Only)
-    const btnUserMgmt = document.getElementById('btn-open-user-mgmt');
-    if (btnUserMgmt) {
-      if (currentRoleObjs.some(r => r.permissions.includes('MANAGE_USERS'))) {
-        btnUserMgmt.style.display = 'flex';
-      } else {
-        btnUserMgmt.style.display = 'none';
-      }
-    }
-
-    const btnReports = document.getElementById('btn-open-reports');
-    if (btnReports) {
-      const canOpenReports = currentRoleObjs.some(r =>
-        r.permissions.includes('READ_ALL_MODULES') ||
-        r.permissions.includes('MANAGE_USERS') ||
-        r.permissions.includes('REPORTS_ACCESS')
-      );
-      btnReports.style.display = canOpenReports ? 'flex' : 'none';
-    }
-
-    // 3. Update Active User Badge
+    // 2. Update Active User Badge
     this.updateUserBadge(state);
 
-    // 4. Update Live Liquidity Ticker Bar
+    // 3. Update Live Liquidity Ticker Bar
     this.updateTicker(state);
 
-    // 5. Render View Based on Auth & Landing State
+    // 4. Render View Based on Auth & Landing State
     if (this.viewport) {
+      const needsWorkspace = state.isAuthenticated && state.hasPassedLanding && !this._needsOrgSelection();
+      const shouldShowHeader = state.isAuthenticated && state.hasPassedLanding && !this._needsOrgSelection();
+      const headerEl = document.querySelector('.top-header');
+      if (headerEl) {
+        headerEl.style.display = shouldShowHeader ? 'flex' : 'none';
+      }
+      if (this.tickerBar) {
+        this.tickerBar.style.display = shouldShowHeader ? 'flex' : 'none';
+      }
+
       if (!state.hasPassedLanding) {
-        document.querySelector('.top-header').style.display = 'none';
-        if (this.tickerBar) this.tickerBar.style.display = 'none';
         LandingView.render(this.viewport, state);
-      } else if (!state.isAuthenticated) {
-        document.querySelector('.top-header').style.display = 'none';
-        if (this.tickerBar) this.tickerBar.style.display = 'none';
+        return;
+      }
+
+      if (!state.isAuthenticated) {
         LoginView.render(this.viewport, state);
-      } else if (state.isAuthenticated && this._needsOrgSelection()) {
-        // Multi-org: show org picker before main app
-        document.querySelector('.top-header').style.display = 'none';
-        if (this.tickerBar) this.tickerBar.style.display = 'none';
+        return;
+      }
+
+      if (this._needsOrgSelection()) {
         if (typeof OrgSelectorView !== 'undefined') {
           OrgSelectorView.render(this.viewport, state);
         }
-      } else {
-        document.querySelector('.top-header').style.display = 'flex';
-        if (this.tickerBar) this.tickerBar.style.display = 'flex';
-        
-        // Show org switcher button if superuser
-        this._updateOrgSwitcherBtn();
-
-        switch (state.currentRole) {
-          case 'front-office':
-            BranchView.render(this.viewport, state);
-            break;
-          case 'teller':
-          case 'counter-ops':
-            if (typeof TellerDeskView !== 'undefined') {
-              TellerDeskView.render(this.viewport, state);
-            } else {
-              BranchView.render(this.viewport, state);
-            }
-            break;
-          case 'credit':
-            CreditView.render(this.viewport, state);
-            break;
-          case 'board':
-            BoardView.render(this.viewport, state);
-            break;
-          case 'treasury':
-          default:
-            TreasuryView.render(this.viewport, state);
-            break;
-        }
+        return;
       }
+
+      if (!needsWorkspace) {
+        return;
+      }
+
+      this.renderWorkspaceShell(state);
+      const workspaceBody = this.viewport.querySelector('#workspace-body');
+      if (!workspaceBody) return;
+      switch (state.currentRole) {
+        case 'front-office':
+          BranchView.render(workspaceBody, state);
+          break;
+        case 'teller':
+        case 'counter-ops':
+          if (typeof TellerDeskView !== 'undefined') {
+            TellerDeskView.render(workspaceBody, state);
+          } else {
+            BranchView.render(workspaceBody, state);
+          }
+          break;
+        case 'credit':
+          CreditView.render(workspaceBody, state);
+          break;
+        case 'board':
+          BoardView.render(workspaceBody, state);
+          break;
+        case 'treasury':
+        default:
+          TreasuryView.render(workspaceBody, state);
+          break;
+      }
+      this.updateWorkspaceContext(state);
     }
 
     // 5. Re-render modals with fresh state
@@ -185,6 +175,241 @@ const App = {
         AiWidgetView.render(this.aiWidgetMount, state);
       }
     }
+  },
+
+  renderWorkspaceShell(state) {
+    if (!this.viewport) return;
+    const currentRole = state.currentRole || 'treasury';
+    const portalName = {
+      treasury: 'Treasury',
+      'front-office': 'FOSA',
+      teller: 'Teller',
+      board: 'Board',
+      credit: 'Credit'
+    }[currentRole] || 'Operations';
+
+    this.viewport.innerHTML = `
+      <div class="workspace-shell">
+        <header id="workspace-context-bar" class="workspace-context-bar" aria-live="polite">
+          <div class="workspace-context-main">
+            <div class="workspace-context-kicker">${portalName}</div>
+            <h1>${portalName} Workspace</h1>
+          </div>
+          <div class="workspace-context-actions">
+            <span class="workspace-pill workspace-pill--neutral">Live</span>
+            <span class="workspace-pill workspace-pill--highlight">${portalName}</span>
+          </div>
+        </header>
+        <div id="workspace-body" class="workspace-body"></div>
+      </div>
+    `;
+  },
+
+  updateWorkspaceContext(state) {
+    const bar = document.getElementById('workspace-context-bar');
+    if (!bar) return;
+    const roleMap = {
+      treasury: { label: 'Treasury', task: 'Liquidity & funding operations' },
+      'front-office': { label: 'FOSA', task: 'Branch operations & member services' },
+      teller: { label: 'Teller', task: 'Cash desk operations & reconciliation' },
+      credit: { label: 'Credit', task: 'Applications, approval queue & NPA management' },
+      board: { label: 'Board', task: 'Governance, risk & oversight' }
+    };
+    const current = roleMap[state.currentRole] || roleMap.treasury;
+    bar.innerHTML = `
+      <div class="workspace-context-main">
+        <div class="workspace-context-kicker">${current.label}</div>
+        <h1>${current.label} Workspace</h1>
+      </div>
+      <div class="workspace-context-actions">
+        <span class="workspace-pill workspace-pill--neutral">${current.task}</span>
+        <span class="workspace-pill workspace-pill--highlight">Live</span>
+      </div>
+    `;
+  },
+
+  initPortalDrawers() {
+    const openPortalBtn = document.getElementById('btn-open-portal-nav');
+    const openActionsBtn = document.getElementById('btn-open-actions');
+    const portalDrawer = this.portalDrawer;
+    const utilityDrawer = this.utilityDrawer;
+    const closeButtons = document.querySelectorAll('[data-close-drawer]');
+
+    if (openPortalBtn && portalDrawer) {
+      openPortalBtn.addEventListener('click', () => {
+        this.toggleDrawer(portalDrawer, utilityDrawer);
+      });
+    }
+
+    if (openActionsBtn && utilityDrawer) {
+      openActionsBtn.addEventListener('click', () => {
+        this.toggleDrawer(utilityDrawer, portalDrawer);
+      });
+    }
+
+    closeButtons.forEach(btn => {
+      btn.addEventListener('click', () => {
+        const target = btn.dataset.closeDrawer === 'portal' ? portalDrawer : utilityDrawer;
+        if (target) {
+          target.classList.remove('open');
+          target.setAttribute('aria-hidden', 'true');
+        }
+      });
+    });
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        [portalDrawer, utilityDrawer].forEach(drawer => {
+          if (drawer) {
+            drawer.classList.remove('open');
+            drawer.setAttribute('aria-hidden', 'true');
+          }
+        });
+      }
+    });
+
+    this.populatePortalDrawer();
+    this.populateUtilityMenu();
+  },
+
+  toggleDrawer(openDrawer, siblingDrawer) {
+    if (!openDrawer) return;
+    const isOpen = openDrawer.classList.contains('open');
+    if (siblingDrawer) {
+      siblingDrawer.classList.remove('open');
+      siblingDrawer.setAttribute('aria-hidden', 'true');
+    }
+    openDrawer.classList.toggle('open', !isOpen);
+    openDrawer.setAttribute('aria-hidden', String(isOpen));
+  },
+
+  populatePortalDrawer() {
+    const list = document.getElementById('portal-drawer-list');
+    if (!list) return;
+
+    const portalGroups = [
+      { label: 'Dashboard', items: [
+        { name: 'Dashboard', action: 'dashboard' }
+      ]},
+      { label: 'FOSA', items: [
+        { name: 'Overview', role: 'front-office' },
+        { name: 'Member Onboarding', role: 'front-office' },
+        { name: 'Approval Queue', role: 'front-office' },
+        { name: 'Teller Monitor', role: 'teller' },
+        { name: 'Cash Management', role: 'front-office' },
+        { name: 'Transactions', role: 'front-office' },
+        { name: 'End-of-Day', role: 'front-office' }
+      ]},
+      { label: 'Treasury', items: [
+        { name: 'Overview', role: 'treasury' },
+        { name: 'Liquidity', role: 'treasury' },
+        { name: 'Cash', role: 'treasury' },
+        { name: 'Funding', role: 'treasury' },
+        { name: 'Maturity Ladder', role: 'treasury' },
+        { name: 'GL', role: 'treasury' }
+      ]},
+      { label: 'Credit', items: [
+        { name: 'Overview', role: 'credit' },
+        { name: 'Applications', role: 'credit' },
+        { name: 'Approval Queue', role: 'credit' },
+        { name: 'Portfolio', role: 'credit' },
+        { name: 'Collections', role: 'credit' }
+      ]},
+      { label: 'Board', items: [
+        { name: 'Overview', role: 'board' }
+      ]},
+      { label: 'Administration', items: [
+        { name: 'Portal Menu', action: 'users' }
+      ]},
+      { label: 'Reports', items: [
+        { name: 'Portal Menu', action: 'reports' }
+      ]}
+    ];
+
+    list.innerHTML = portalGroups.map(group => `
+      <div class="drawer-group">
+        <div class="drawer-group-label">${group.label}</div>
+        <div class="drawer-menu-items">
+          ${group.items.map(item => `
+            <button type="button" class="drawer-menu-item" data-portal-action="${item.role || item.action}">
+              <span>${item.name}</span>
+              <span class="drawer-item-meta">Open</span>
+            </button>
+          `).join('')}
+        </div>
+      </div>
+    `).join('');
+
+    list.querySelectorAll('.drawer-menu-item').forEach(button => {
+      button.addEventListener('click', () => {
+        const action = button.dataset.portalAction;
+        if (action === 'dashboard') {
+          const fallbackRole = store.state.currentRole || 'treasury';
+          store.setRole(fallbackRole);
+        } else if (action === 'treasury' || action === 'front-office' || action === 'teller' || action === 'credit' || action === 'board') {
+          store.setRole(action);
+        } else if (action === 'reports') {
+          ReportsView.open();
+        } else if (action === 'users') {
+          UserManagementView.open();
+        }
+        this.closeAllDrawers();
+      });
+    });
+  },
+
+  populateUtilityMenu() {
+    const list = document.getElementById('utility-menu-list');
+    if (!list) return;
+
+    const items = [
+      { label: 'Input Hub', action: () => InputModalView.open() },
+      { label: 'Users', action: () => UserManagementView.open() },
+      { label: 'Reports', action: () => ReportsView.open() },
+      { label: 'Mobile Inflow', action: () => {
+        const simAmount = 250000;
+        CoreBankingEngine.executeTransaction(store.state, {
+          type: 'Bulk M-Pesa C2B Inflow Shock',
+          memberId: null,
+          amount: simAmount,
+          channel: 'M-Pesa B2C/C2B',
+          debitGL: '1040',
+          creditGL: '2010',
+          description: `Institutional Member Mobile Inflow (+${Formatter.money(simAmount)})`
+        });
+        App.showToast(`Simulated +${Formatter.money(simAmount)} Bulk M-Pesa C2B Inflow. Instant GL Dr 1040 / Cr 2010 posted.`, 'success');
+      } },
+      { label: 'Reset Data', action: () => {
+        if (confirm('Reset Finage OS to v3 institutional baseline seed data?')) {
+          store.resetState();
+          this.showToast('System reset to v3 institutional baseline.', 'info');
+        }
+      } },
+      { label: 'Sign Out', action: async () => {
+        await UserManagementEngine.logout(store.state);
+        store.save();
+      } }
+    ];
+
+    list.innerHTML = items.map(item => `
+      <button type="button" class="drawer-menu-item" data-action-menu="${item.label}">${item.label}</button>
+    `).join('');
+
+    list.querySelectorAll('.drawer-menu-item').forEach((button, idx) => {
+      button.addEventListener('click', () => {
+        items[idx].action();
+        this.closeAllDrawers();
+      });
+    });
+  },
+
+  closeAllDrawers() {
+    [this.portalDrawer, this.utilityDrawer].forEach(drawer => {
+      if (drawer) {
+        drawer.classList.remove('open');
+        drawer.setAttribute('aria-hidden', 'true');
+      }
+    });
   },
 
   // Determine if the user still needs to pick an org

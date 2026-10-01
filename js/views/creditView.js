@@ -10,50 +10,67 @@ const CreditView = {
     const npa = state.npaSummary;
     const workflowTasks = WorkflowEngine.getPendingTasks(state, 'credit');
 
+    const creditActions = `
+      <button id="btn-post-npa-provision" class="btn btn-outline btn-sm" title="Execute double-entry loan loss impairment provision into GL (Dr 5030 / Cr 1250)">
+        Post NPA Provision
+      </button>
+      <button id="btn-export-sasra-form4a" class="btn btn-secondary btn-sm">
+        SASRA Form 4A
+      </button>
+      <button id="btn-auto-pace-queue" class="btn btn-emerald btn-sm">
+        Auto-Pace Queue
+      </button>
+    `;
+
     container.innerHTML = `
-      <!-- View Header -->
-      <div class="view-header-row">
-        <div class="view-heading-group">
-          <h1>Credit, Embedded Workflows & Online NPA Engine</h1>
-          <p>Maker-Checker approval queue, Real-Time Online NPA tracking, RIM relationship scores, and liquidity pacing</p>
+      <div class="workspace-module">
+        <div class="workspace-toolbar">
+          <div class="workspace-breadcrumb" data-label="Credit">Overview</div>
+          <div class="workspace-actions">${creditActions}</div>
         </div>
-        <div class="view-actions-group">
-          <button id="btn-post-npa-provision" class="btn btn-outline" title="Execute double-entry loan loss impairment provision into GL (Dr 5030 / Cr 1250)">
-            Post NPA Provision to GL
-          </button>
-          <button id="btn-export-sasra-form4a" class="btn btn-secondary">
-            Export SASRA Form 4A (CSV)
-          </button>
-          <button id="btn-auto-pace-queue" class="btn btn-emerald">
-            Auto-Pace Disbursement Queue
-          </button>
-        </div>
-      </div>
 
-      <!-- Pacing Rules Engine Banner (Layer 1 + Layer 6) -->
-      <div style="background: #ffffff; border: 2px solid var(--accent-green-dark); padding: 1rem 1.25rem; margin-bottom: 1.25rem; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem;">
-        <div style="display: flex; align-items: center; gap: 0.85rem;">
-          <div style="padding: 0.35rem 0.65rem; background: var(--accent-green-dark); color: #ffffff; font-size: 0.85rem; font-weight: 800; font-family: var(--font-mono);">
-            PACING GATE
+        <div class="metric-strip">
+          <div class="metric-pill">
+            <span class="metric-label">Headroom</span>
+            <span class="metric-value">${Formatter.money(pacing.safeHeadroomTarget)}</span>
           </div>
-          <div>
-            <div style="font-weight: 800; color: var(--accent-green-dark); font-size: 0.95rem; text-transform: uppercase;">
-              Disbursement Headroom: ${Formatter.money(pacing.safeHeadroomTarget)} (Maintains 20% Target Buffer)
-            </div>
-            <div style="font-size: 0.775rem; color: var(--text-dim); margin-top: 0.15rem;">
-              Pending Pipeline: ${Formatter.money(pacing.totalPendingAmount)} across ${pacing.pendingCount} approved loans • Max Statutory Cap: ${Formatter.money(pacing.maxStatutoryHeadroom)}
-            </div>
+          <div class="metric-pill">
+            <span class="metric-label">Pending pipeline</span>
+            <span class="metric-value">${Formatter.money(pacing.totalPendingAmount)}</span>
+          </div>
+          <div class="metric-pill">
+            <span class="metric-label">NPA ratio</span>
+            <span class="metric-value">${npa.onlineNpaRatio}%</span>
+          </div>
+          <div class="metric-pill">
+            <span class="metric-label">Queue</span>
+            <span class="metric-value">${workflowTasks.length}</span>
           </div>
         </div>
-        <div style="display: flex; align-items: center; gap: 0.5rem;">
-          <span class="badge ${pacing.canDisburseAllImmediate ? 'badge-safe' : 'badge-danger'}" style="font-size: 0.75rem; padding: 0.35rem 0.75rem;">
-            ${pacing.canDisburseAllImmediate ? 'Sufficient Immediate Liquidity' : 'Staggered Pacing Active'}
-          </span>
-        </div>
-      </div>
-      </div>
 
-      <!-- Embedded Maker-Checker Workflow Queue Panel (Layer 1) -->
+        <!-- Pacing Rules Engine Banner (Layer 1 + Layer 6) -->
+        <div style="background: #ffffff; border: 2px solid var(--accent-green-dark); padding: 1rem 1.25rem; margin-bottom: 1.25rem; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem;">
+          <div style="display: flex; align-items: center; gap: 0.85rem;">
+            <div style="padding: 0.35rem 0.65rem; background: var(--accent-green-dark); color: #ffffff; font-size: 0.85rem; font-weight: 800; font-family: var(--font-mono);">
+              PACING GATE
+            </div>
+            <div>
+              <div style="font-weight: 800; color: var(--accent-green-dark); font-size: 0.95rem; text-transform: uppercase;">
+                Disbursement Headroom: ${Formatter.money(pacing.safeHeadroomTarget)} (Maintains 20% Target Buffer)
+              </div>
+              <div style="font-size: 0.775rem; color: var(--text-dim); margin-top: 0.15rem;">
+                Pending Pipeline: ${Formatter.money(pacing.totalPendingAmount)} across ${pacing.pendingCount} approved loans • Max Statutory Cap: ${Formatter.money(pacing.maxStatutoryHeadroom)}
+              </div>
+            </div>
+          </div>
+          <div style="display: flex; align-items: center; gap: 0.5rem;">
+            <span class="badge ${pacing.canDisburseAllImmediate ? 'badge-safe' : 'badge-danger'}" style="font-size: 0.75rem; padding: 0.35rem 0.75rem;">
+              ${pacing.canDisburseAllImmediate ? 'Sufficient Immediate Liquidity' : 'Staggered Pacing Active'}
+            </span>
+          </div>
+        </div>
+
+        <!-- Embedded Maker-Checker Workflow Queue Panel (Layer 1) -->
       <div class="panel-grid">
         <div class="glass-panel col-12">
           <div class="panel-header">
@@ -269,6 +286,7 @@ const CreditView = {
             </table>
           </div>
         </div>
+      </div>
       </div>
     `;
 

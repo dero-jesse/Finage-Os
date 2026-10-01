@@ -104,29 +104,89 @@ const UserManagementView = {
     `;
   },
 
-  // --- TAB 5: Danger Zone ---
+  // --- TAB 4: Go-Live & Reset Wizard ---
   renderDangerTab(state) {
+    const userCount = state.users ? state.users.length : 0;
+    const memberCount = state.members ? state.members.length : 0;
+    const txCount = state.recentTransactions ? state.recentTransactions.length : 0;
+    const syncAvail = !!window.supabase;
     return `
-      <div style="display: flex; flex-direction: column; gap: 1rem; padding: 1rem; border: 1px solid var(--accent-rose); border-radius: var(--radius-md); background: rgba(225, 29, 72, 0.05);">
-        <h4 style="color: var(--accent-rose); margin: 0; display: flex; align-items: center; gap: 0.5rem;">
-          <span class="badge badge-rose" style="font-size: 0.7rem; font-weight: 800;">CRITICAL</span>
-          System Purge &amp; Factory Reset
-        </h4>
-        <p style="font-size: 0.85rem; color: var(--text-dim); margin: 0;">
-          This action will permanently delete all database records (Transactions, Members, Users, Branches, Roles, etc.) from the live Supabase instance and reset the local state. 
-          Upon the next reload, the system will re-seed itself completely from scratch with ZERO balances (a true factory reset).
-        </p>
-        
-        <div style="display: flex; flex-direction: column; gap: 0.5rem; margin-top: 1rem; max-width: 300px;">
-          <label class="form-label">Admin Authorization Password</label>
-          <input type="password" id="inp-purge-password" class="form-control" placeholder="Enter purge password">
-          <button type="button" id="btn-execute-purge" class="btn btn-primary" style="background: var(--accent-rose); border-color: var(--accent-rose); margin-top: 0.5rem;">
-            Authenticate & Purge System
-          </button>
+      <div style="display: flex; flex-direction: column; gap: 1.25rem;">
+
+        <!-- Status Banner -->
+        <div style="display: flex; align-items: center; gap: 0.75rem; padding: 0.85rem 1rem;
+          background: rgba(16,185,129,0.07); border: 1px solid rgba(16,185,129,0.25); border-radius: var(--radius-md);">
+          <div style="width: 10px; height: 10px; border-radius: 50%; background: var(--accent-emerald); flex-shrink: 0; box-shadow: 0 0 0 3px rgba(16,185,129,0.2);"></div>
+          <div>
+            <div style="font-size: 0.78rem; font-weight: 800; color: var(--accent-emerald); text-transform: uppercase; letter-spacing: 0.05em;">Real Operations Mode</div>
+            <div style="font-size: 0.72rem; color: var(--text-dim); margin-top: 2px;">
+              ${userCount} staff &middot; ${memberCount} members &middot; ${txCount} transactions &middot; Supabase
+              ${syncAvail ? '<strong style="color:var(--accent-emerald);">Connected</strong>' : '<strong style="color:var(--accent-amber);">Offline</strong>'}
+            </div>
+          </div>
         </div>
+
+        <!-- STEP 1: Clear local browser -->
+        <div style="border: 1px solid var(--border-subtle); border-radius: var(--radius-md); overflow: hidden;">
+          <div style="padding: 0.75rem 1rem; background: var(--bg-surface-elevated); border-bottom: 1px solid var(--border-subtle); display: flex; align-items: center; gap: 0.6rem;">
+            <span style="font-family: var(--font-mono); font-size: 0.7rem; font-weight: 800; background: var(--accent-amber-subtle); color: var(--accent-amber); padding: 2px 7px; border-radius: 4px; border: 1px solid var(--accent-amber);">STEP 1</span>
+            <span style="font-size: 0.825rem; font-weight: 700;">Clear Local Browser Cache</span>
+          </div>
+          <div style="padding: 1rem;">
+            <p style="font-size: 0.8rem; color: var(--text-dim); margin: 0 0 0.75rem;">Wipes this browser's localStorage demo state only. Supabase data is unaffected. App reloads and pulls fresh data from the cloud.</p>
+            <div style="display: flex; align-items: center; gap: 0.6rem;">
+              <button type="button" id="btn-clear-local-cache" class="btn btn-outline" style="font-size: 0.78rem; border-color: var(--accent-amber); color: var(--accent-amber);">Clear Cache &amp; Reload</button>
+              <span style="font-size: 0.72rem; color: var(--text-muted);">Safe &middot; Reversible on next sync</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- STEP 2: Supabase operational clean slate -->
+        <div style="border: 1px solid rgba(239,68,68,0.35); border-radius: var(--radius-md); overflow: hidden;">
+          <div style="padding: 0.75rem 1rem; background: rgba(239,68,68,0.04); border-bottom: 1px solid rgba(239,68,68,0.2); display: flex; align-items: center; gap: 0.6rem;">
+            <span style="font-family: var(--font-mono); font-size: 0.7rem; font-weight: 800; background: rgba(239,68,68,0.1); color: var(--accent-rose); padding: 2px 7px; border-radius: 4px; border: 1px solid var(--accent-rose);">STEP 2</span>
+            <span style="font-size: 0.825rem; font-weight: 700;">Supabase Operational Clean Slate</span>
+            <span class="badge badge-rose" style="font-size: 0.6rem; margin-left: auto;">Irreversible</span>
+          </div>
+          <div style="padding: 1rem;">
+            <p style="font-size: 0.8rem; color: var(--text-dim); margin: 0 0 0.6rem;">Deletes all <strong>demo operational data</strong> from Supabase and zeroes GL balances. Staff users, roles, and branch structure are <strong>preserved</strong>.</p>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.4rem; margin-bottom: 0.85rem; font-size: 0.72rem;">
+              <div style="padding: 0.4rem 0.6rem; background: rgba(239,68,68,0.06); border-radius: 4px; color: var(--accent-rose);">&#x2715; ${memberCount} member records</div>
+              <div style="padding: 0.4rem 0.6rem; background: rgba(239,68,68,0.06); border-radius: 4px; color: var(--accent-rose);">&#x2715; ${txCount} transactions</div>
+              <div style="padding: 0.4rem 0.6rem; background: rgba(239,68,68,0.06); border-radius: 4px; color: var(--accent-rose);">&#x2715; Audit trail</div>
+              <div style="padding: 0.4rem 0.6rem; background: rgba(239,68,68,0.06); border-radius: 4px; color: var(--accent-rose);">&#x2715; GL balances &rarr; 0</div>
+              <div style="padding: 0.4rem 0.6rem; background: rgba(16,185,129,0.06); border-radius: 4px; color: var(--accent-emerald);">&#x2713; ${userCount} staff users</div>
+              <div style="padding: 0.4rem 0.6rem; background: rgba(16,185,129,0.06); border-radius: 4px; color: var(--accent-emerald);">&#x2713; Roles &amp; permissions</div>
+              <div style="padding: 0.4rem 0.6rem; background: rgba(16,185,129,0.06); border-radius: 4px; color: var(--accent-emerald);">&#x2713; Branch structure</div>
+              <div style="padding: 0.4rem 0.6rem; background: rgba(16,185,129,0.06); border-radius: 4px; color: var(--accent-emerald);">&#x2713; GL Chart of Accounts</div>
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 0.5rem; max-width: 300px;">
+              <label class="form-label" style="font-size: 0.72rem;">Admin Authorization Password</label>
+              <input type="password" id="inp-golive-password" class="form-control" placeholder="Enter admin password" style="font-size: 0.8rem;">
+              <div id="golive-error" style="display:none; color: var(--accent-rose); font-size: 0.75rem; font-weight: 600;"></div>
+              <button type="button" id="btn-execute-golive" class="btn btn-primary" style="background: var(--accent-rose); border-color: var(--accent-rose); font-size: 0.8rem;" ${!syncAvail ? 'disabled' : ''}>
+                ${syncAvail ? 'Execute Go-Live Clean Slate' : 'Supabase Offline'}
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- STEP 3: Full factory reset -->
+        <details style="border: 1px solid rgba(127,29,29,0.4); border-radius: var(--radius-md); overflow: hidden;">
+          <summary style="padding: 0.75rem 1rem; background: rgba(127,29,29,0.05); cursor: pointer; font-size: 0.78rem; font-weight: 700; color: #b91c1c; list-style: none;">&#9658; Full Factory Reset &mdash; wipes everything including staff &amp; roles (last resort)</summary>
+          <div style="padding: 1rem; border-top: 1px solid rgba(127,29,29,0.2);">
+            <p style="font-size: 0.78rem; color: var(--text-dim); margin: 0 0 0.75rem;">Destroys ALL data including staff, roles, and branches. You must re-run the full schema and seed scripts afterwards.</p>
+            <div style="display: flex; align-items: center; gap: 0.6rem;">
+              <input type="password" id="inp-purge-password" class="form-control" placeholder="Purge password" style="max-width: 200px; font-size: 0.78rem;">
+              <button type="button" id="btn-execute-purge" class="btn btn-primary" style="background: #7f1d1d; border-color: #7f1d1d; font-size: 0.78rem;">Factory Reset</button>
+            </div>
+          </div>
+        </details>
+
       </div>
     `;
   },
+
 
   // --- TAB 1: User Directory ---
   renderDirectoryTab(state) {
@@ -417,7 +477,91 @@ const UserManagementView = {
       });
     }
 
-    // Danger Zone Purge Action
+    // STEP 1: Clear local browser cache only
+    const btnClearCache = container.querySelector('#btn-clear-local-cache');
+    if (btnClearCache) {
+      btnClearCache.addEventListener('click', () => {
+        if (confirm('Clear this browser\'s localStorage and reload from Supabase? Your Supabase data is not affected.')) {
+          localStorage.removeItem(store.storageKey);
+          App.showToast('Local cache cleared. Reloading…', 'info');
+          setTimeout(() => window.location.reload(), 800);
+        }
+      });
+    }
+
+    // STEP 2: Go-Live clean slate (keeps staff/roles/branches, wipes operational data)
+    const btnGoLive = container.querySelector('#btn-execute-golive');
+    if (btnGoLive) {
+      btnGoLive.addEventListener('click', async () => {
+        const pass = container.querySelector('#inp-golive-password')?.value;
+        const errEl = container.querySelector('#golive-error');
+        if (!pass) { if (errEl) { errEl.textContent = 'Password required.'; errEl.style.display = 'block'; } return; }
+        if (errEl) errEl.style.display = 'none';
+
+        // Verify against Supabase Auth
+        const currentUser = store.getCurrentUser();
+        if (!currentUser) { if (errEl) { errEl.textContent = 'No active session.'; errEl.style.display = 'block'; } return; }
+
+        if (!confirm('This will permanently delete all demo members, transactions, and audit trail from Supabase, and zero all GL balances.\n\nStaff users, roles, and branches are preserved.\n\nThis cannot be undone. Proceed?')) return;
+
+        btnGoLive.disabled = true;
+        btnGoLive.textContent = 'Executing…';
+
+        try {
+          // Verify password via Supabase auth
+          if (window.supabase) {
+            const { error } = await window.supabase.auth.signInWithPassword({
+              email: currentUser.email, password: pass
+            });
+            if (error) {
+              if (errEl) { errEl.textContent = 'Incorrect password: ' + error.message; errEl.style.display = 'block'; }
+              btnGoLive.disabled = false; btnGoLive.textContent = 'Execute Go-Live Clean Slate';
+              return;
+            }
+          }
+
+          // Delete operational tables only — preserve users, roles, branches, general_ledger structure
+          await window.supabase.from('audit_trail').delete().neq('id', 'AUD-GOLIVE-' + new Date().toISOString().slice(0,10).replace(/-/g,''));
+          await window.supabase.from('transactions').delete().neq('id', '__keepall__');
+          await window.supabase.from('members').delete().neq('id', '__keepall__');
+
+          // Zero GL balances
+          const { data: glRows } = await window.supabase.from('general_ledger').select('code');
+          if (glRows) {
+            for (const row of glRows) {
+              await window.supabase.from('general_ledger').update({ balance: 0 }).eq('code', row.code);
+            }
+          }
+
+          // Insert go-live audit marker
+          await window.supabase.from('audit_trail').insert([{
+            id: 'AUD-GOLIVE-' + Date.now(),
+            timestamp: new Date().toISOString(),
+            userId: currentUser.id,
+            userName: currentUser.name,
+            action: 'SYSTEM_GO_LIVE',
+            module: 'System Administration',
+            entityId: 'INST-001',
+            description: 'Go-live clean slate executed. All demo data purged. Real operations commenced.',
+            ipAddress: '127.0.0.1',
+            glImpact: 'All GL balances zeroed — opening balances to be posted by Treasury'
+          }]);
+
+          // Clear local state
+          localStorage.removeItem(store.storageKey);
+
+          App.showToast('Go-live complete. All demo data cleared. Reloading…', 'success');
+          setTimeout(() => window.location.reload(), 1800);
+        } catch (err) {
+          console.error(err);
+          App.showToast('Go-live failed: ' + err.message, 'danger');
+          btnGoLive.disabled = false;
+          btnGoLive.textContent = 'Execute Go-Live Clean Slate';
+        }
+      });
+    }
+
+    // STEP 3: Full factory reset (wipes everything)
     const btnPurge = container.querySelector('#btn-execute-purge');
     if (btnPurge) {
       btnPurge.addEventListener('click', async () => {
@@ -426,18 +570,17 @@ const UserManagementView = {
           App.showToast('Invalid authorization password.', 'danger');
           return;
         }
-        
-        if (confirm('CRITICAL WARNING: This will delete ALL data in the live Supabase database and reset the system. Proceed?')) {
-          btnPurge.textContent = 'Purging Database...';
+        if (confirm('CRITICAL: This deletes ALL data including staff users, roles, and branches. You must re-run the schema scripts afterwards. Proceed?')) {
+          btnPurge.textContent = 'Purging…';
           btnPurge.disabled = true;
           try {
             await store.purgeSupabase();
-            App.showToast('System successfully purged and reset. Reloading...', 'success');
+            App.showToast('Full factory reset complete. Reloading…', 'success');
             setTimeout(() => window.location.reload(), 1500);
           } catch (err) {
             console.error(err);
-            App.showToast('Failed to purge database: ' + err.message, 'danger');
-            btnPurge.textContent = 'Authenticate & Purge System';
+            App.showToast('Factory reset failed: ' + err.message, 'danger');
+            btnPurge.textContent = 'Factory Reset';
             btnPurge.disabled = false;
           }
         }

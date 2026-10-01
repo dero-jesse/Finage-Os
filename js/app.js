@@ -16,6 +16,7 @@ const App = {
     this.toastShelf = document.getElementById('toast-shelf'); // required by showToast
     this.portalDrawer = document.getElementById('portal-nav-drawer');
     this.utilityDrawer = document.getElementById('utility-menu-drawer');
+    this.drawerOverlay = document.getElementById('drawer-overlay');
 
     this.initPortalDrawers();
 

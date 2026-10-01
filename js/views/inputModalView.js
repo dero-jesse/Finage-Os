@@ -6,6 +6,10 @@
 const InputModalView = {
   activeTab: 'members', // 'members' | 'transactions' | 'loans' | 'dfi' | 'opex' | 'bulk'
 
+  getMemberAccounts(state) {
+    return (state.members || []).filter(member => !RIMEngine.isStaffProfile(member));
+  },
+
   renderModal(container, state) {
     container.innerHTML = `
       <div class="modal-backdrop" id="universal-input-modal">
@@ -171,7 +175,7 @@ const InputModalView = {
           <div class="form-group" style="margin: 0;">
             <label class="form-label">Member Account</label>
             <select id="inp-tx-member" class="form-control">
-              ${state.members.map(m => `
+              ${this.getMemberAccounts(state).map(m => `
                 <option value="${m.id}" ${m.id === state.selectedMemberId ? 'selected' : ''}>
                   ${m.name} (${m.id})
                 </option>
@@ -246,7 +250,7 @@ const InputModalView = {
           <div class="form-group" style="margin: 0;">
             <label class="form-label">Applicant Member</label>
             <select id="inp-loan-member" class="form-control">
-              ${state.members.map(m => `
+              ${this.getMemberAccounts(state).map(m => `
                 <option value="${m.id}">
                   ${m.name} (${m.id} • ${m.riskSegment})
                 </option>
@@ -302,7 +306,7 @@ const InputModalView = {
           <div class="form-group" style="margin: 0;">
             <label class="form-label">Digital Guarantor Member</label>
             <select id="inp-loan-guarantor" class="form-control">
-              ${state.members.map(m => `<option value="${m.id}">${m.name} ($${m.shareCapital.toLocaleString()} Shares)</option>`).join('')}
+              ${this.getMemberAccounts(state).map(m => `<option value="${m.id}">${m.name} ($${m.shareCapital.toLocaleString()} Shares)</option>`).join('')}
             </select>
           </div>
         </div>

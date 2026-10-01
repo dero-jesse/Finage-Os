@@ -4,41 +4,16 @@
  */
 
 const RIMEngine = {
+  isStaffProfile(member) {
+    return /^STF-/i.test(member?.nationalId || '') || /staff operator|institutional staff/i.test(member?.kycStatus || '');
+  },
+
   /**
    * Generates a 360-degree relationship dossier for a member
    */
   getMemberProfile(state, memberId) {
     if (!state || !memberId) return null;
-    let member = (state.members || []).find(m => m.id === memberId);
-    if (!member) {
-      // Check if it corresponds to a user ID or staff member ID
-      const user = (state.users || []).find(u => u.id === memberId || `MEM-${u.id}` === memberId);
-      if (user) {
-        member = (state.members || []).find(m => m.email && user.email && m.email.toLowerCase() === user.email.toLowerCase());
-        if (!member) {
-          member = {
-            id: `MEM-${user.id}`,
-            name: `${user.name} (Staff)`,
-            nationalId: `STF-${user.id}`,
-            phone: user.phone || '+254 700 000000',
-            email: user.email,
-            joinDate: '2026-01-01',
-            branchId: user.branchId || 'br-01',
-            branchName: user.branchName || 'Head Office',
-            kycStatus: 'Verified (Staff Operator)',
-            occupation: 'Institutional Staff Member',
-            employer: 'Finage Apex Microfinance Bank',
-            riskSegment: 'Low Risk - Institutional Staff',
-            relationshipScore: 92,
-            savingsBalance: 25000,
-            fixedDepositBalance: 0,
-            shareCapital: 10000,
-            activeLoans: [],
-            guarantorCommitments: []
-          };
-        }
-      }
-    }
+    const member = (state.members || []).find(m => m.id === memberId && !this.isStaffProfile(m));
     if (!member) return null;
 
     const totalAssets = member.savingsBalance + member.fixedDepositBalance + member.shareCapital;

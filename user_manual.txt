@@ -1,61 +1,165 @@
-FINAGE OS - COMPREHENSIVE USER MANUAL
-=======================================
+FINAGE OS USER MANUAL
+====================
 
-1. INTRODUCTION
-----------------
-Finage OS is a comprehensive, institutional-grade core banking and financial management operating system. It provides a unified interface for retail members, branch tellers, credit officers, treasury managers, and board executives. The system is built on a Role-Based Access Control (RBAC) foundation that ensures operators only see the modules and data they are authorized to access.
+Purpose
+-------
+This guide explains the main screens and the everyday tasks available in Finage OS. Your organization, assigned role, permissions, and enabled services determine which screens and actions you can use. Screen labels may vary slightly by version.
 
-2. AUTHENTICATION & ROLE-BASED ACCESS CONTROL (RBAC)
-------------------------------------------------------
-The system utilizes a secure login gateway. Upon logging in with an official corporate email, the RBAC Engine evaluates the operator's assigned roles.
-- Users can hold multiple roles simultaneously.
-- Access to specific modules (e.g., Treasury, Credit) is strictly gated by the roles assigned.
-- System Administrators have exclusive access to the User Administration center (Alt + U), where they can onboard new operators, assign multiple roles, and configure single/daily transaction approval limits.
+Finage OS can run with demo/local data or with an organization connected to Supabase. Before entering real operational information, confirm that you are signed in to the correct organization and that your administrator has confirmed the environment is configured for production use.
 
-3. SYSTEM COMPONENTS & MODULES
+1. SIGN IN AND SELECT AN ORGANIZATION
+-------------------------------------
+1. Open Finage OS in the web browser provided by your administrator.
+2. Sign in with your assigned account. Do not share your password or account.
+3. If you are asked to select an organization, choose the organization you are authorized to work in.
+4. Check the organization name in the application header before posting, importing, exporting, or changing setup.
+5. If no organization is available, or the wrong organization is shown, contact your platform administrator. Do not enter records under another organization's workspace.
+
+2. NAVIGATION BASICS
+--------------------
+- The role buttons in the header switch between the Teller, FOSA, Treasury, Credit, and Board workspaces when your permissions allow it.
+- Select Actions to open Input Hub, Users, Organization Setup, Reports, and other available commands.
+- Select the menu icon at the left of the header to open the portal navigation drawer.
+- Use the close button on a modal to return to your workspace. If a modal is still open, close or cancel it before starting another task.
+- A success message confirms that an action completed in the current application environment. For important financial work, also verify the resulting balance, report, or record.
+
+Keyboard shortcuts:
+- Alt+N opens the Input Hub.
+- Alt+U opens User Access when your account has user-management permission.
+
+3. TELLER AND MEMBER OPERATIONS
 -------------------------------
 
-### A. Member Self-Service Portal (Retail)
-Use Case: Allows registered retail members to view their balances, apply for mobile loans, and simulate mobile deposits (like M-Pesa).
-- Inputs: Mobile deposit amounts (simulated), Instant Loan applications (amount, term).
-- Outputs: Live account balances (Savings, Fixed Deposit, Share Capital), Active loan statuses.
-- Reports: Mini-statements of recent transactions, Loan amortization schedules.
+Post a member transaction
+1. Open Actions > Input Hub > Transactions, or press Alt+N and select the Transactions tab.
+2. Select the member and transaction type.
+3. Enter the amount and choose the delivery channel that matches how funds were received or paid.
+4. Review the GL Impact preview. It shows the debit and credit accounts that will be used.
+5. Enter a useful reference, such as a receipt, deposit slip, or payment reference.
+6. Select Post Real-Time Transaction.
+7. Confirm the success message and check the member balance or General Ledger report as appropriate.
 
-### B. Branch Operations (FOSA & Teller)
-Use Case: Designed for front-office branch tellers and branch managers to process over-the-counter cash transactions and reconcile vault balances.
-- Inputs: Member ID lookup, Cash Deposit/Withdrawal amounts, General Ledger (GL) account selections.
-- Outputs: Real-time update of Member Savings Balances and internal Cash Vault GLs.
-- Reports: Branch Vault reconciliation reports, Daily teller transaction logs, Teller limit override audit trails.
+The transaction screen provides configured types such as member deposit, withdrawal, loan repayment, share capital purchase, fixed-term placement, dividend distribution, loan-loss provision, and service fee. Only use a type when it matches the underlying transaction. A transaction is rejected if required accounts or permissions are missing.
 
-### C. Credit & Non-Performing Asset (NPA) Management
-Use Case: Used by Credit Makers (Origination) and Credit Checkers (Approval) to process institutional loans, score KYC risk, and monitor portfolio health.
-- Inputs: Loan Application details (Principal, Interest Rate, Tenor, Product Type), Manual risk overrides.
-- Outputs: Automated KYC Risk Scoring, Loan Approval routing, Disbursement authorizations.
-- Reports: Portfolio-At-Risk (PAR) Metrics (PAR30, PAR90), Non-Performing Loans (NPL) ratio, Provisioning coverage reports.
+Cash counter transactions may require an assigned teller till, sufficient drawer cash for a withdrawal, and compliance with approval limits. If a post is rejected, do not retry with a different amount or channel just to bypass the control; ask the supervisor to review the rejection.
 
-### D. Treasury & Liquidity Management
-Use Case: Utilized by Treasury Officers to manage institutional liquidity, inter-bank placements, and execute multi-ledger GL journal entries.
-- Inputs: Inter-bank transfer amounts, DFI facility drawdown requests, T-Bill placement instructions, Manual GL debit/credit journal entries.
-- Outputs: Updated Liquidity Coverage Ratio (LCR), Instant re-balancing of Central Bank/Commercial Bank GLs.
-- Reports: Real-time Liquidity Ticker (Cash equivalents vs. liabilities), Asset-Liability gap analysis, GL Trial Balance extracts.
+Register a member
+1. Open Actions > Input Hub > New Member.
+2. Enter the member's identity and contact details, branch, occupation, and employer as requested.
+3. Select the primary account type and funding channel.
+4. If an opening deposit is being taken now, confirm the amount. The opening deposit posts through the configured GL mapping.
+5. Select Register & Onboard Member and verify that the member appears in the system.
 
-### E. Board Governance, Audit & Stress Lab
-Use Case: A read-only/executive dashboard for the Board of Directors and Internal Auditors to monitor systemic risk, view audit logs, and simulate economic shocks.
-- Inputs: Macro-economic stress sliders (e.g., NPL shock percentage, deposit flight simulation, interest rate hikes).
-- Outputs: Simulated impact on capital adequacy, liquidity buffers, and projected profitability.
-- Reports: Immutable System Audit Trail (capturing IP, User, GL Impact), SASRA/Central Bank Regulatory Returns formatting, AML/CFT threshold alerts.
+Only enter information collected and verified in line with your organization's KYC procedures. If the initial deposit is zero, the member is registered without an opening transaction.
 
-### F. Universal Data Ingestion Hub
-Use Case: Accessed via shortcut (Alt + N) or the top header, this is a rapid command center for ingesting external data batches.
-- Inputs: Raw CSV/JSON text data (e.g., M-Pesa Paybill statements, CRB credit scores, bulk payroll files).
-- Outputs: Parsed and validated JSON data ready for core banking ledger ingestion.
-- Reports: Ingestion success/failure logs, Data validation error matrices.
+4. CREDIT WORKFLOW
+------------------
 
-4. SYSTEM SHORTCUTS
---------------------
-- Alt + N : Open Universal Data Ingestion Hub
-- Alt + U : Open User Management & RBAC Center (System Admin Only)
+Submit a loan application
+1. Open Actions > Input Hub > Loans.
+2. Choose the applicant, loan product, requested principal, term, urgency, branch, and guarantor where required.
+3. Review the displayed liquidity headroom and pacing information.
+4. Select Submit to Credit Workflow Queue.
+5. Follow the application in the Credit workspace. Submission is an application/workflow action; it is not by itself a loan disbursement or GL posting.
 
-5. TRANSACTION WORKFLOWS (MAKER/CHECKER)
-------------------------------------------
-Transactions exceeding an operator's "Single Approval Limit" are automatically flagged and routed to the escalation queue. A checker with a higher limit (e.g., Branch Manager or Head of Credit) must review and authorize the transaction before GL impact occurs.
+Review a credit task
+1. Switch to the Credit workspace.
+2. Review the task, amount, maker, status, and liquidity check in the workflow inbox.
+3. Use Approve & Release or Reject only if your role permits it and you have completed the required checks.
+4. Follow your organization's maker-checker policy. Do not approve a request that you initiated when segregation of duties applies.
+
+Post a loan-loss provision
+Use the Credit workspace's Post NPA Provision action for an approved provision. The configured entry is Dr 5030 Loan Loss Provision Expense and Cr 1250 Allowance for Loan Impairment. Review the amount and authorization before posting.
+
+5. EXPENSES AND GENERAL LEDGER JOURNALS
+--------------------------------------
+
+Add a planned recurring operating cost
+1. Open Actions > Input Hub > Opex.
+2. Enter the expense description/category, monthly amount, and due day.
+3. Select Save OpEx Schedule Line.
+
+This creates an operating-cost schedule for cash forecasting. It does not record an actual payment or post an expense to the General Ledger.
+
+Post an actual or miscellaneous expense
+1. Confirm that you have authority to post a GL journal and are in the correct organization.
+2. Open Actions > Input Hub > GL Journal.
+3. Select the appropriate expense account as the debit account. Examples in the sample chart include:
+   - 5010: staff salaries and employee benefits.
+   - 5020: branch operating and technology costs.
+   - 5040: interest expense on member deposits.
+   - 5030: loan-loss provision expense; normally use the Credit workspace provision action instead.
+4. Select the account that actually funded the expense as the credit account. Examples include 1020 for a bank payment, 1010 for physical branch cash, or 1040 for digital-channel float.
+5. Enter the same amount for both sides and describe the purpose, date, supplier, and invoice/payment reference.
+6. Select Post Balanced Journal.
+7. Verify the entry in the General Ledger report and check the Treasury trial-balance status.
+
+Example: a bank-paid UGX 250,000 branch bill is Dr 5020 UGX 250,000 and Cr 1020 UGX 250,000. Select accounts and codes that match your organization's approved chart; sample codes may not match your accounting policy.
+
+The journal requires equal debit and credit amounts, two different valid accounts, and a posting that leaves the ledger balanced. It does not replace invoice approval, payment authorization, tax processing, or supporting-document retention. Follow your organization's procedures for those controls.
+
+6. TREASURY AND LEDGER CHECKS
+-----------------------------
+- Open the Treasury workspace to review liquidity, the accounting check, and the General Ledger snapshot.
+- Use the chart filters to display assets, liabilities, equity, income, or expenses. The All filter displays the full chart.
+- Select Verify Ledger to run a trial-balance/accounting-equation check. Review any flagged variance before further posting and notify the finance supervisor.
+- Select Trial Balance or Balance Sheet to export the relevant report.
+- Use the Input Hub's DFI tab to register a facility or record a drawdown. A drawdown posts using the configured bank and DFI liability accounts; verify the facility availability and destination bank before submission.
+- Parallel EOD is a system action that posts configured accrual/fee entries. Run it only when authorized and at the time approved by your finance procedure.
+
+7. ORGANIZATION SETUP AND MIGRATION
+-----------------------------------
+Organization Setup is for users with organization-management permission.
+1. Open Actions > Organization Setup. An incomplete-setup notice may also provide a Continue Setup button.
+2. Review the organization profile and branch list.
+3. Choose a direct-entry option to add a branch, member, GL account, or opening balance; or choose the applicable CSV type and select a CSV/workbook file.
+4. For a chart account, enter a unique GL code, account name, category, normal balance (Debit or Credit), and account type.
+5. For an opening balance, enter the same GL code used in the chart and the signed amount according to the import instructions/accounting convention provided by your finance administrator.
+6. Review displayed row counts, import errors, unknown GL codes, and opening-balance control totals.
+7. Select Save Setup only after resolving errors and confirming that opening debit and credit totals balance.
+
+Migration files can contain more detailed history than the application currently maps to live modules. Some supported records are retained in the migration archive for reconciliation rather than appearing as live operational records. Do not assume that an imported archive row has created a live account or transaction; check the relevant module and reports after saving.
+
+8. REPORTS AND EXPORTS
+----------------------
+1. Open Actions > Reports.
+2. Choose a category: Clients, Savings, Fixed Deposits, Shares, Loans, or Ledger.
+3. Set the From and To dates where applicable.
+4. Choose CSV or XLSX, then select Generate Report.
+5. Review the preview and verify the organization and report category before using the exported file.
+
+Exports may contain confidential financial or member information. Store and share them only through approved organization channels. Reports reflect records available to the selected workspace; they are not a substitute for external regulatory approval or reconciliation.
+
+9. USER ACCESS AND ADMINISTRATION
+---------------------------------
+Users with user-management permission can open Actions > Users or press Alt+U.
+- Operators lists users, assigned roles, branch assignments, approval limit, and status.
+- Permissions displays the task-permission matrix.
+- Add User is used to enter a new operator's name, official email, role(s), branch, and approval ceilings. In a connected environment, follow the password and invitation process shown on screen.
+- Edit Roles is used to change an existing operator's role assignment.
+
+Assign only the access needed for a person's duties. Confirm roles, branch, status, and transaction limits with the organization administrator. User management should not be used to bypass maker-checker or approval controls.
+
+10. BOARD, AUDIT, AND REPORTING
+-------------------------------
+The Board workspace provides portfolio, liquidity, forecast, stress-test, and audit-related views and exports. Stress-test controls change a scenario analysis; they do not post financial transactions. Use export buttons only for authorized oversight or reporting work, and validate the period and organization before sharing results.
+
+11. COMMON PROBLEMS
+-------------------
+- Organization not selected: return to organization selection or ask the administrator to grant access to the correct organization.
+- Action or tab is missing: your role may not include permission for it. Ask the administrator to review the permissions matrix.
+- Journal rejected: confirm both GL codes exist, the accounts have Debit/Credit normal balances, the amount is positive, and the proposed entry preserves ledger balance.
+- Opening balance rejected: confirm every code exists in the chart and that total opening debits equal total opening credits.
+- Import errors: correct the indicated source file row/column and re-import. Keep the original migration file for reconciliation.
+- A success message appears but data seems missing: confirm the organization in the header, check the relevant report/module, and verify sync status. Do not repeat a financial transaction until its first result is checked.
+- Unexpected result or suspected duplicate: stop posting and contact the finance administrator with the organization, transaction reference, date, amount, and screenshot. Do not include passwords or authentication tokens.
+
+12. SAFE OPERATING PRACTICES
+----------------------------
+- Confirm the organization and environment before every financial post or import.
+- Check member, account, branch, amount, channel, and reference before submitting.
+- Keep receipts, invoices, approvals, and source migration files according to your organization's record-retention policy.
+- Never share accounts or passwords. Sign out when leaving a shared workstation.
+- Do not use demo data or sample accounts as a guide to a real organization's approved chart without confirming mappings with Finance.
+- Reconcile reports and external bank/member records according to your organization's close procedures.
+- Contact your Finage OS administrator for access problems, environment questions, or suspected data issues.

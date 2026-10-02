@@ -139,6 +139,9 @@ const TreasuryView = {
                 <button class="btn btn-sm btn-coa-filter ${this.activeCOAFilter === 'all' ? 'btn-primary' : 'btn-outline'}" data-filter="all">All</button>
                 <button class="btn btn-sm btn-coa-filter ${this.activeCOAFilter === 'assets' ? 'btn-primary' : 'btn-outline'}" data-filter="assets">Assets</button>
                 <button class="btn btn-sm btn-coa-filter ${this.activeCOAFilter === 'liabilities' ? 'btn-primary' : 'btn-outline'}" data-filter="liabilities">Liabilities</button>
+                <button class="btn btn-sm btn-coa-filter ${this.activeCOAFilter === 'equity' ? 'btn-primary' : 'btn-outline'}" data-filter="equity">Equity</button>
+                <button class="btn btn-sm btn-coa-filter ${this.activeCOAFilter === 'income' ? 'btn-primary' : 'btn-outline'}" data-filter="income">Income</button>
+                <button class="btn btn-sm btn-coa-filter ${this.activeCOAFilter === 'expenses' ? 'btn-primary' : 'btn-outline'}" data-filter="expenses">Expenses</button>
               </div>
             </div>
             <div class="workspace-card-body">
@@ -154,7 +157,7 @@ const TreasuryView = {
                     </tr>
                   </thead>
                   <tbody>
-                    ${filteredAccounts.slice(0, 8).map(g => `
+                    ${filteredAccounts.map(g => `
                       <tr>
                         <td>${g.code}</td>
                         <td>${g.name}</td>

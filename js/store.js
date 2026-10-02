@@ -1281,7 +1281,7 @@ class FinageStore {
   }
 
   // --- Real-time Double-Entry Posting Action ---
-  postTransaction({ type, memberId, loanId, amount, channel = 'Branch FOSA', glDebitCode, glCreditCode, description, legs }) {
+  postTransaction({ type, memberId, loanId, amount, channel = 'Branch FOSA', glDebitCode, glCreditCode, description, legs, bankAccountId }) {
     const parsedAmount = Number(amount);
     const validation = this.validateTransactionRequest({
       type,
@@ -1415,7 +1415,7 @@ class FinageStore {
       }
       // GL 1020: Commercial Bank Clearing Accounts
       if (leg.glCode === '1020') {
-        const bank = this.state.bankAccounts && this.state.bankAccounts[0];
+        const bank = this.state.bankAccounts?.find(account => account.id === bankAccountId) || this.state.bankAccounts?.[0];
         if (bank) {
           bank.balance += (leg.type === 'Debit' ? legAmt : -legAmt);
         }
@@ -1457,23 +1457,25 @@ class FinageStore {
     const facility = this.state.externalFacilities.find(f => f.id === facilityId);
     const bank = this.state.bankAccounts.find(b => b.id === destinationBankId) || this.state.bankAccounts[0];
     const currentUser = this.getCurrentUser();
-    if (!facility || !bank) return false;
-
-    facility.drawnAmount += amount;
-    facility.availableToDraw = Math.max(0, facility.availableToDraw - amount);
-    bank.balance += amount;
+    const parsedAmount = Number(amount);
+    if (!facility || !bank || !Number.isFinite(parsedAmount) || parsedAmount <= 0 || parsedAmount > facility.availableToDraw) return false;
 
     // Post to GL through Double-Entry Engine: Dr 1020 Commercial Bank / Cr 2200 External DFI Borrowing
     const postResult = this.postTransaction({
       type: 'DFI Facility Drawdown',
-      amount,
+      amount: parsedAmount,
       channel: 'Treasury Wire',
       glDebitCode: '1020',
       glCreditCode: '2200',
+      bankAccountId: bank.id,
       description: `Drawdown of ${Formatter.money(amount)} from ${facility.lender} into ${bank.institution}. ${notes || ''}`
     });
 
-    return !!postResult;
+    if (!postResult) return false;
+    facility.drawnAmount += parsedAmount;
+    facility.availableToDraw = Math.max(0, facility.availableToDraw - parsedAmount);
+    this.saveQuiet();
+    return true;
   }
 
   addExternalFacility(facilityData) {

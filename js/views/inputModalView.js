@@ -49,6 +49,9 @@ const InputModalView = {
             <button class="input-tab-btn ${this.activeTab === 'bulk' ? 'active' : ''}" data-tab="bulk">
               5. CSV
             </button>
+            <button class="input-tab-btn ${this.activeTab === 'journal' ? 'active' : ''}" data-tab="journal">
+              6. GL Journal
+            </button>
           </div>
 
           <!-- Modal Body with Dynamic Tab Content -->
@@ -74,6 +77,8 @@ const InputModalView = {
         return this.renderOpExTab(state);
       case 'bulk':
         return this.renderBulkTab(state);
+      case 'journal':
+        return this.renderJournalTab(state);
       case 'transactions':
       default:
         return this.renderTransactionTab(state);
@@ -479,6 +484,28 @@ const InputModalView = {
     `;
   },
 
+  renderJournalTab(state) {
+    const accounts = (state.generalLedger || []).slice().sort((left, right) => String(left.code).localeCompare(String(right.code)));
+    const options = accounts.map(account =>
+      `<option value="${account.code}">${account.code} · ${account.name} (${account.category || account.type || 'Unclassified'})</option>`
+    ).join('');
+    return `
+      <form id="form-gl-journal" style="display:flex;flex-direction:column;gap:1rem;">
+        <p style="margin:0;color:var(--text-dim);font-size:.78rem;">Post a balanced debit and credit between any two accounts in this organization’s chart.</p>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:.85rem;">
+          <label class="form-label">Debit account<select name="debitCode" class="form-control" required>${options}</select></label>
+          <label class="form-label">Credit account<select name="creditCode" class="form-control" required>${options}</select></label>
+          <label class="form-label">Amount<input name="amount" type="number" min="0.01" step="0.01" class="form-control" required></label>
+          <label class="form-label">Journal description<input name="description" class="form-control" maxlength="180" required></label>
+        </div>
+        <div id="gl-journal-error" role="alert" style="display:none;color:var(--accent-rose);font-size:.78rem;font-weight:700;"></div>
+        <div style="display:flex;justify-content:flex-end;">
+          <button type="submit" class="btn btn-primary" ${accounts.length < 2 ? 'disabled' : ''}>Post Balanced Journal</button>
+        </div>
+      </form>
+    `;
+  },
+
   // --- TAB 5: Bulk CSV Ingestion Simulator ---
   renderBulkTab(state) {
     return `
@@ -548,6 +575,42 @@ const InputModalView = {
 
   bindTabSpecificEvents(container, state) {
     const modal = container.querySelector('#universal-input-modal');
+
+    const journalForm = container.querySelector('#form-gl-journal');
+    if (journalForm) {
+      journalForm.addEventListener('submit', event => {
+        event.preventDefault();
+        const formData = new FormData(journalForm);
+        const debitCode = String(formData.get('debitCode') || '');
+        const creditCode = String(formData.get('creditCode') || '');
+        const amount = Number(formData.get('amount'));
+        const description = String(formData.get('description') || '').trim();
+        const errorEl = container.querySelector('#gl-journal-error');
+        errorEl.style.display = 'none';
+        if (debitCode === creditCode) {
+          errorEl.textContent = 'Choose two different GL accounts for the debit and credit.';
+          errorEl.style.display = 'block';
+          return;
+        }
+        const result = store.postTransaction({
+          type: 'Manual GL Journal',
+          amount,
+          channel: 'Treasury Journal',
+          description,
+          legs: [
+            { glCode: debitCode, type: 'Debit', amount },
+            { glCode: creditCode, type: 'Credit', amount }
+          ]
+        });
+        if (!result) {
+          errorEl.textContent = 'Journal was not posted. Check permissions, account codes, and ledger balance controls.';
+          errorEl.style.display = 'block';
+          return;
+        }
+        App.showToast('Balanced GL journal posted.', 'success');
+        modal.classList.remove('active');
+      });
+    }
 
     // TAB 0: Member Onboarding Form
     const memberForm = container.querySelector('#form-new-member');
@@ -753,14 +816,18 @@ const InputModalView = {
         const amount = Number(container.querySelector('#inp-drawdown-amount')?.value);
         const destinationBankId = container.querySelector('#inp-drawdown-bank')?.value;
 
-        store.recordDFIDrawdown({
+        const result = store.recordDFIDrawdown({
           facilityId,
           amount,
           destinationBankId
         });
 
-        App.showToast(`Drawdown of ${Formatter.money(amount)} executed. Bank clearing liquidity increased.`, 'success');
-        modal.classList.remove('active');
+        if (result) {
+          App.showToast(`Drawdown of ${Formatter.money(amount)} executed. Bank clearing liquidity increased.`, 'success');
+          modal.classList.remove('active');
+        } else {
+          App.showToast('Drawdown was not posted. Check the available facility balance and GL account mapping.', 'danger');
+        }
       });
     }
 

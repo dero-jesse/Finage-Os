@@ -216,8 +216,21 @@ const CoreBankingEngine = {
           error: `GL account code ${leg.glCode} does not exist in Chart of Accounts.`
         };
       }
+      if (!['Debit', 'Credit'].includes(glAcc.normal)) {
+        return {
+          success: false,
+          error: `GL account ${leg.glCode} must have a Debit or Credit normal balance before it can be posted.`
+        };
+      }
 
       const amount = Number(leg.amount);
+      const currentBalance = Number(glAcc.balance ?? 0);
+      if (!Number.isFinite(currentBalance)) {
+        return {
+          success: false,
+          error: `GL account ${leg.glCode} has an invalid current balance.`
+        };
+      }
       // For Debit normal accounts: Debit adds, Credit subtracts
       // For Credit normal accounts: Credit adds, Debit subtracts
       let delta = 0;
@@ -227,7 +240,7 @@ const CoreBankingEngine = {
         delta = leg.type === 'Credit' ? amount : -amount;
       }
 
-      appliedUpdates.push({ glAcc, delta, leg });
+      appliedUpdates.push({ glAcc, previousBalance: currentBalance, delta, leg });
     }
 
     // Apply all updates
@@ -254,7 +267,22 @@ const CoreBankingEngine = {
       amount: legs[0]?.amount || 0
     });
 
-    // 3. Multi-Channel SMS alert simulation
+    // 4. Run Balance Validation Control on every post
+    const balCheck = this.validateLedgerBalance(state, `POST_${type.toUpperCase().replace(/\s+/g, '_')}`);
+    if (!balCheck.isBalanced) {
+      appliedUpdates.forEach(update => {
+        update.glAcc.balance = update.previousBalance;
+      });
+      const journalIndex = state.ledger.findIndex(entry => entry.id === txId);
+      if (journalIndex >= 0) state.ledger.splice(journalIndex, 1);
+      this.validateLedgerBalance(state, `ROLLBACK_${type.toUpperCase().replace(/\s+/g, '_')}`);
+      return {
+        success: false,
+        error: `Posting rejected because it would leave the ledger unbalanced (debit/credit variance ${balCheck.variance.toFixed(2)}, equation variance ${balCheck.equationVariance.toFixed(2)}).`
+      };
+    }
+
+    // 3. Multi-Channel SMS alert simulation; never alert for a rolled-back post.
     if (memberId) {
       const member = state.members.find(m => m.id === memberId);
       if (member && member.phone) {
@@ -268,9 +296,6 @@ const CoreBankingEngine = {
         });
       }
     }
-
-    // 4. Run Balance Validation Control on every post
-    const balCheck = this.validateLedgerBalance(state, `POST_${type.toUpperCase().replace(/\s+/g, '_')}`);
 
     return {
       success: true,

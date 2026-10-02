@@ -4,6 +4,7 @@ const OrganizationSetupView = {
   _branches: [],
   _importData: null,
   _importMode: 'full',
+  _manualEntryMode: 'branch',
   _saving: false,
 
   _emptyImport() {
@@ -39,6 +40,49 @@ const OrganizationSetupView = {
 
   _escape(value) {
     return String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
+  },
+
+  _manualEntryFormMarkup() {
+    const mode = this._manualEntryMode || 'branch';
+    const fieldMap = {
+      branch: `
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:.7rem;">
+          <label class="form-label">Branch name<input name="branchName" class="form-control" required></label>
+          <label class="form-label">Branch code<input name="branchCode" class="form-control" required></label>
+          <label class="form-label">Teller count<input name="branchTellers" type="number" min="0" value="0" class="form-control"></label>
+          <label class="form-label">Vault limit<input name="branchVaultLimit" type="number" min="0" value="0" class="form-control"></label>
+          <label class="form-label">Teller cash limit<input name="branchTellerCashLimit" type="number" min="0" value="0" class="form-control"></label>
+        </div>
+      `,
+      member: `
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:.7rem;">
+          <label class="form-label">Full name<input name="memberName" class="form-control" required></label>
+          <label class="form-label">National ID<input name="memberNationalId" class="form-control" required></label>
+          <label class="form-label">Phone<input name="memberPhone" class="form-control" required></label>
+          <label class="form-label">Email<input name="memberEmail" type="email" class="form-control"></label>
+          <label class="form-label">Branch name<input name="memberBranchName" class="form-control" value="${this._escape(this._branches[0]?.name || 'Head Office')}"></label>
+          <label class="form-label">Savings balance<input name="memberSavingsBalance" type="number" min="0" value="0" class="form-control"></label>
+          <label class="form-label">Share capital<input name="memberShareCapital" type="number" min="0" value="0" class="form-control"></label>
+          <label class="form-label">Fixed deposit balance<input name="memberFixedDeposit" type="number" min="0" value="0" class="form-control"></label>
+        </div>
+      `,
+      gl: `
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:.7rem;">
+          <label class="form-label">GL code<input name="glCode" class="form-control" required></label>
+          <label class="form-label">Account name<input name="glName" class="form-control" required></label>
+          <label class="form-label">Category<input name="glCategory" class="form-control" required></label>
+          <label class="form-label">Normal balance<select name="glNormal" class="form-control"><option value="Debit">Debit</option><option value="Credit">Credit</option></select></label>
+          <label class="form-label">Account type<input name="glType" class="form-control" value="Operating"></label>
+        </div>
+      `,
+      openingBalance: `
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:.7rem;">
+          <label class="form-label">GL code<input name="openingCode" class="form-control" required></label>
+          <label class="form-label">Opening balance<input name="openingBalance" type="number" step="0.01" class="form-control" required></label>
+        </div>
+      `
+    };
+    return fieldMap[mode] || fieldMap.branch;
   },
 
   _render() {
@@ -90,6 +134,22 @@ const OrganizationSetupView = {
               <div style="overflow:auto;">
                 <table class="data-table"><thead><tr><th>Name</th><th>Code</th><th>Tellers</th><th>Vault limit</th><th>Teller cash limit</th></tr></thead><tbody>${branchRows}</tbody></table>
               </div>
+            </section>
+            <section style="padding:1rem;border:1px solid var(--border-subtle);border-radius:8px;">
+              <h3 style="font-size:.92rem;margin:0 0 .55rem;">Direct data entry</h3>
+              <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:.6rem;margin-bottom:.75rem;">
+                <button type="button" class="btn btn-secondary btn-sm" data-manual-entry-mode="branch" ${this._manualEntryMode === 'branch' ? 'style="background:#0f766e;color:white;"' : ''}>+ Add Branch</button>
+                <button type="button" class="btn btn-secondary btn-sm" data-manual-entry-mode="member" ${this._manualEntryMode === 'member' ? 'style="background:#0f766e;color:white;"' : ''}>+ Add Member</button>
+                <button type="button" class="btn btn-secondary btn-sm" data-manual-entry-mode="gl" ${this._manualEntryMode === 'gl' ? 'style="background:#0f766e;color:white;"' : ''}>+ Add GL Account</button>
+                <button type="button" class="btn btn-secondary btn-sm" data-manual-entry-mode="openingBalance" ${this._manualEntryMode === 'openingBalance' ? 'style="background:#0f766e;color:white;"' : ''}>+ Add Opening Balance</button>
+              </div>
+              <form id="org-setup-manual-entry-form" style="display:flex;flex-direction:column;gap:.8rem;">
+                ${this._manualEntryFormMarkup()}
+                <div style="display:flex;justify-content:flex-end;">
+                  <button type="submit" class="btn btn-primary btn-sm">Add record</button>
+                </div>
+              </form>
+              <div style="font-size:.72rem;color:var(--text-dim);margin-top:.75rem;">These manual entries are added directly to the migration draft, so users can onboard an organization without uploading CSV or XLS files.</div>
             </section>
             <section style="padding:1rem;border:1px solid var(--border-subtle);border-radius:8px;">
               <h3 style="font-size:.92rem;margin:0 0 .55rem;">Migration approach</h3>
@@ -154,6 +214,92 @@ const OrganizationSetupView = {
         this._render();
       });
     });
+
+    overlay.querySelectorAll('[data-manual-entry-mode]').forEach(button => {
+      button.addEventListener('click', () => {
+        this._manualEntryMode = button.dataset.manualEntryMode;
+        this._render();
+      });
+    });
+
+    const manualEntryForm = overlay.querySelector('#org-setup-manual-entry-form');
+    if (manualEntryForm) {
+      manualEntryForm.addEventListener('submit', event => {
+        event.preventDefault();
+        const formData = new FormData(manualEntryForm);
+        const values = Object.fromEntries(formData.entries());
+
+        try {
+          if (this._manualEntryMode === 'branch') {
+            const name = String(values.branchName || '').trim();
+            const code = String(values.branchCode || '').trim();
+            if (!name || !code) throw new Error('Branch name and code are required.');
+            const branch = {
+              id: `br-${Date.now()}`,
+              name,
+              code,
+              tellerCount: Number(values.branchTellers || 0),
+              vaultLimit: Number(values.branchVaultLimit || 0),
+              tellerCashLimit: Number(values.branchTellerCashLimit || 0),
+              status: 'Active'
+            };
+            this._branches.push(branch);
+            this._importData.branches.push(branch);
+          } else if (this._manualEntryMode === 'member') {
+            const name = String(values.memberName || '').trim();
+            const nationalId = String(values.memberNationalId || '').trim();
+            const phone = String(values.memberPhone || '').trim();
+            if (!name || !nationalId || !phone) throw new Error('Member name, national ID, and phone are required.');
+            const member = {
+              id: `MEM-${Date.now()}`,
+              name,
+              nationalId,
+              phone,
+              email: String(values.memberEmail || '').trim(),
+              branchName: String(values.memberBranchName || this._branches[0]?.name || 'Head Office'),
+              branchId: this._branches.find(branch => branch.name === String(values.memberBranchName || this._branches[0]?.name || 'Head Office'))?.id || this._branches[0]?.id || null,
+              kycStatus: 'Verified',
+              relationshipScore: 0,
+              savingsBalance: Number(values.memberSavingsBalance || 0),
+              fixedDepositBalance: Number(values.memberFixedDeposit || 0),
+              shareCapital: Number(values.memberShareCapital || 0),
+              activeLoans: [],
+              guarantorCommitments: []
+            };
+            this._importData.members.push(member);
+          } else if (this._manualEntryMode === 'gl') {
+            const code = String(values.glCode || '').trim();
+            const name = String(values.glName || '').trim();
+            const category = String(values.glCategory || '').trim();
+            const normal = String(values.glNormal || 'Debit');
+            if (!code || !name || !category) throw new Error('GL code, account name, and category are required.');
+            this._importData.glAccounts.push({
+              code,
+              name,
+              category,
+              type: String(values.glType || category),
+              normal,
+              isContra: false
+            });
+          } else if (this._manualEntryMode === 'openingBalance') {
+            const code = String(values.openingCode || '').trim();
+            const balance = Number(values.openingBalance || 0);
+            if (!code) throw new Error('GL code is required.');
+            this._importData.openingBalances.push({ code, balance });
+          }
+
+          manualEntryForm.reset();
+          this._render();
+          App.showToast('Manual migration record added.', 'success');
+        } catch (error) {
+          const errorEl = overlay.querySelector('#org-setup-error');
+          if (errorEl) {
+            errorEl.textContent = error.message;
+            errorEl.style.display = 'block';
+          }
+        }
+      });
+    }
 
     const fileInput = overlay.querySelector('#org-setup-file');
     overlay.querySelector('#org-setup-template').addEventListener('click', () => SetupImport.downloadTemplate());

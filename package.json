@@ -1,0 +1,10 @@
+{
+  "name": "finage-os",
+  "version": "3.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "python3 -m http.server 4173",
+    "start": "python3 -m http.server 4173",
+    "serve": "python3 -m http.server 4173"
+  }
+}

@@ -7,21 +7,48 @@ const ReportsView = {
   activeCategory: 'client-management',
 
   open() {
+    const state = (typeof store !== 'undefined' && store && store.state) ? store.state : ((typeof window !== 'undefined' && window.store && window.store.state) ? window.store.state : null);
     const mount = document.getElementById('reports-modal-mount');
+    const hasInitializedAppContext = !!(state && (
+      state.isAuthenticated ||
+      state.currentUserId ||
+      state.currentRole ||
+      state.hasPassedLanding ||
+      Array.isArray(state.users) && state.users.length > 0 ||
+      Array.isArray(state.members) && state.members.length > 0 ||
+      Array.isArray(state.generalLedger) && state.generalLedger.length > 0
+    ));
+
+    if (!hasInitializedAppContext) {
+      if (typeof App !== 'undefined' && App.showToast) {
+        App.showToast('Open the workspace first, then access Reports.', 'info');
+      }
+      return;
+    }
+
     if (mount) {
-      this.renderModal(mount, store.state);
+      this.renderModal(mount, state || { members: [], generalLedger: [], institution: {} });
+      const modal = mount.querySelector('#reports-modal');
+      if (modal) {
+        modal.classList.add('active');
+      }
     }
   },
 
   close(container) {
     if (container) {
+      const modal = container.querySelector('#reports-modal');
+      if (modal) {
+        modal.classList.remove('active');
+      }
       container.innerHTML = '';
     }
   },
 
   renderModal(container, state) {
+    const safeState = state || ((typeof store !== 'undefined' && store && store.state) ? store.state : { members: [], generalLedger: [], institution: {} });
     container.innerHTML = `
-      <div class="modal-backdrop" id="reports-modal">
+      <div class="modal-backdrop active" id="reports-modal">
         <div class="modal-container" style="max-width: 1100px; border-radius: 18px; overflow: hidden;">
           <div class="modal-header" style="padding: 1.25rem 1.5rem; background: linear-gradient(180deg, rgba(15,23,42,0.92), rgba(15,23,42,0.98)); border-bottom: 1px solid rgba(148,163,184,0.2);">
             <div>
@@ -41,13 +68,13 @@ const ReportsView = {
           </div>
 
           <div class="modal-body" id="reports-panel-body" style="padding: 1.25rem 1.5rem 1.5rem; background: linear-gradient(180deg, #f8fafc 0%, #f3f6fb 100%);">
-            ${this.renderCategoryBody(state)}
+            ${this.renderCategoryBody(safeState)}
           </div>
         </div>
       </div>
     `;
 
-    this.bindEvents(container, state);
+    this.bindEvents(container, safeState);
   },
 
   getCategoryButtons() {
@@ -67,64 +94,82 @@ const ReportsView = {
     const summary = this.getSummaryStats(rows);
 
     return `
-      <div style="display: flex; flex-direction: column; gap: 1.15rem;">
-        <div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.8rem;">
-          <div class="glass-panel" style="margin: 0; padding: 0.9rem 1rem; background: linear-gradient(180deg, #ffffff, #f4f8ff);">
-            <div style="font-size: 0.68rem; letter-spacing: 0.08em; color: var(--text-dim); text-transform: uppercase; margin-bottom: 0.55rem;">Records</div>
-            <div style="font-size: 1.55rem; font-weight: 800; color: var(--accent-green-darkest); font-family: var(--font-mono);">${summary.records}</div>
+      <div style="display: grid; grid-template-columns: 290px minmax(0, 1fr); gap: 1rem; align-items: start;">
+        <aside class="glass-panel" style="margin: 0; padding: 0.85rem; background: linear-gradient(180deg, #ffffff, #f5f8ff); border: 1px solid rgba(148,163,184,0.18);">
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.75rem; padding-bottom: 0.5rem; border-bottom: 1px solid rgba(148,163,184,0.18);">
+            <div style="font-size: 0.68rem; letter-spacing: 0.10em; color: var(--text-dim); text-transform: uppercase; font-weight: 700;">Available Reports</div>
+            <span class="badge badge-aqua" style="padding: 0.2rem 0.45rem; font-size: 0.62rem;">${this.getCategoryButtons().length}</span>
           </div>
-          <div class="glass-panel" style="margin: 0; padding: 0.9rem 1rem; background: linear-gradient(180deg, #ffffff, #effcf9);">
-            <div style="font-size: 0.68rem; letter-spacing: 0.08em; color: var(--text-dim); text-transform: uppercase; margin-bottom: 0.55rem;">Gross Value</div>
-            <div style="font-size: 1.15rem; font-weight: 800; color: var(--accent-green-darkest); font-family: var(--font-mono);">${this.formatCurrency(summary.grossValue)}</div>
-          </div>
-          <div class="glass-panel" style="margin: 0; padding: 0.9rem 1rem; background: linear-gradient(180deg, #ffffff, #f5f3ff);">
-            <div style="font-size: 0.68rem; letter-spacing: 0.08em; color: var(--text-dim); text-transform: uppercase; margin-bottom: 0.55rem;">Branch Coverage</div>
-            <div style="font-size: 1.15rem; font-weight: 800; color: var(--accent-green-darkest); font-family: var(--font-mono);">${summary.branches}</div>
-          </div>
-          <div class="glass-panel" style="margin: 0; padding: 0.9rem 1rem; background: linear-gradient(180deg, #ffffff, #fefce8);">
-            <div style="font-size: 0.68rem; letter-spacing: 0.08em; color: var(--text-dim); text-transform: uppercase; margin-bottom: 0.55rem;">Status</div>
-            <div style="font-size: 0.8rem; font-weight: 700; color: var(--accent-green-dark); text-transform: uppercase;">${summary.status}</div>
-          </div>
-        </div>
 
-        <div style="display: grid; grid-template-columns: 1.3fr 0.7fr; gap: 1.25rem;">
-          <div style="display: flex; flex-direction: column; gap: 1rem;">
-            <div class="glass-panel" style="margin: 0; padding: 1rem; background: linear-gradient(180deg, #ffffff, #f8fbff);">
-              <div class="panel-header" style="margin-bottom: 0.75rem;">
-                <div class="panel-title-wrap">
-                  <span class="panel-title">${category.label}</span>
-                </div>
-                <span class="badge badge-aqua">${rows.length} record(s)</span>
+          <div style="display: flex; flex-direction: column; gap: 0.5rem;">
+            ${this.getCategoryButtons().map(item => `
+              <button
+                type="button"
+                class="drawer-menu-item"
+                data-report-category="${item.id}"
+                style="width: 100%; text-align: left; justify-content: space-between; padding: 0.7rem 0.75rem; border-radius: 10px; border: 1px solid ${this.activeCategory === item.id ? 'rgba(16,185,129,0.35)' : 'rgba(148,163,184,0.18)'}; background: ${this.activeCategory === item.id ? 'linear-gradient(180deg, rgba(16,185,129,0.08), rgba(255,255,255,0.96))' : 'rgba(255,255,255,0.8)'}; color: var(--text-primary); box-shadow: ${this.activeCategory === item.id ? 'inset 0 0 0 1px rgba(16,185,129,0.2)' : 'none'};">
+                <span style="display: block; font-size: 0.73rem; font-weight: 700; letter-spacing: 0.03em;">${item.label}</span>
+                <span style="display: block; margin-top: 0.2rem; font-size: 0.6rem; color: var(--text-dim); opacity: 0.9;">${this.getCategoryById(item.id).description.split(' ').slice(0, 5).join(' ')}</span>
+              </button>
+            `).join('')}
+          </div>
+        </aside>
+
+        <div style="display: flex; flex-direction: column; gap: 1rem; min-width: 0;">
+          <div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.8rem;">
+            <div class="glass-panel" style="margin: 0; padding: 0.9rem 1rem; background: linear-gradient(180deg, #ffffff, #f4f8ff);">
+              <div style="font-size: 0.68rem; letter-spacing: 0.08em; color: var(--text-dim); text-transform: uppercase; margin-bottom: 0.55rem;">Records</div>
+              <div style="font-size: 1.45rem; font-weight: 800; color: var(--accent-green-darkest); font-family: var(--font-mono);">${summary.records}</div>
+            </div>
+            <div class="glass-panel" style="margin: 0; padding: 0.9rem 1rem; background: linear-gradient(180deg, #ffffff, #effcf9);">
+              <div style="font-size: 0.68rem; letter-spacing: 0.08em; color: var(--text-dim); text-transform: uppercase; margin-bottom: 0.55rem;">Gross Value</div>
+              <div style="font-size: 1.1rem; font-weight: 800; color: var(--accent-green-darkest); font-family: var(--font-mono);">${this.formatCurrency(summary.grossValue)}</div>
+            </div>
+            <div class="glass-panel" style="margin: 0; padding: 0.9rem 1rem; background: linear-gradient(180deg, #ffffff, #f5f3ff);">
+              <div style="font-size: 0.68rem; letter-spacing: 0.08em; color: var(--text-dim); text-transform: uppercase; margin-bottom: 0.55rem;">Branch Coverage</div>
+              <div style="font-size: 1.1rem; font-weight: 800; color: var(--accent-green-darkest); font-family: var(--font-mono);">${summary.branches}</div>
+            </div>
+            <div class="glass-panel" style="margin: 0; padding: 0.9rem 1rem; background: linear-gradient(180deg, #ffffff, #fefce8);">
+              <div style="font-size: 0.68rem; letter-spacing: 0.08em; color: var(--text-dim); text-transform: uppercase; margin-bottom: 0.55rem;">Status</div>
+              <div style="font-size: 0.8rem; font-weight: 700; color: var(--accent-green-dark); text-transform: uppercase;">${summary.status}</div>
+            </div>
+          </div>
+
+          <div class="glass-panel" style="margin: 0; padding: 1rem; background: linear-gradient(180deg, #ffffff, #f8fbff);">
+            <div class="panel-header" style="margin-bottom: 0.75rem;">
+              <div class="panel-title-wrap">
+                <span class="panel-title">${category.label}</span>
               </div>
-              <p style="margin: 0; color: var(--text-dim); font-size: 0.75rem; line-height: 1.5;">
-                ${category.description.split(' ').slice(0, 10).join(' ')}${category.description.split(' ').length > 10 ? '…' : ''}
-              </p>
+              <span class="badge badge-aqua">${rows.length} record(s)</span>
+            </div>
+            <p style="margin: 0; color: var(--text-dim); font-size: 0.75rem; line-height: 1.5;">
+              ${category.description}
+            </p>
+          </div>
+
+          <div class="glass-panel" style="margin: 0; padding: 1rem; background: linear-gradient(180deg, #ffffff, #f8fafc);">
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.9rem;">
+              <div class="form-group" style="margin: 0;">
+                <label class="form-label">From</label>
+                <input id="reports-from-date" type="date" class="form-control" value="${this.getDefaultFromDate()}" />
+              </div>
+              <div class="form-group" style="margin: 0;">
+                <label class="form-label">To</label>
+                <input id="reports-to-date" type="date" class="form-control" value="${this.getDefaultToDate()}" />
+              </div>
             </div>
 
-            <div class="glass-panel" style="margin: 0; padding: 1rem; background: linear-gradient(180deg, #ffffff, #f8fafc);">
-              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.9rem;">
-                <div class="form-group" style="margin: 0;">
-                  <label class="form-label">From</label>
-                  <input id="reports-from-date" type="date" class="form-control" value="${this.getDefaultFromDate()}" />
-                </div>
-                <div class="form-group" style="margin: 0;">
-                  <label class="form-label">To</label>
-                  <input id="reports-to-date" type="date" class="form-control" value="${this.getDefaultToDate()}" />
-                </div>
+            <div style="display: grid; grid-template-columns: 1fr auto; gap: 0.8rem; margin-top: 1rem; align-items: end;">
+              <div class="form-group" style="margin: 0;">
+                <label class="form-label">Export format</label>
+                <select id="reports-export-format" class="form-control">
+                  <option value="csv">CSV</option>
+                  <option value="xlsx">XLSX</option>
+                </select>
               </div>
-
-              <div style="display: grid; grid-template-columns: 1fr auto; gap: 0.8rem; margin-top: 1rem; align-items: end;">
-                <div class="form-group" style="margin: 0;">
-                  <label class="form-label">Export format</label>
-                  <select id="reports-export-format" class="form-control">
-                    <option value="csv">CSV</option>
-                    <option value="xlsx">XLSX</option>
-                  </select>
-                </div>
-                <button id="btn-generate-report" class="btn btn-primary" style="padding: 0.7rem 1.2rem; font-weight: 800; white-space: nowrap;">
-                  Generate Report
-                </button>
-              </div>
+              <button id="btn-generate-report" class="btn btn-primary" style="padding: 0.7rem 1.2rem; font-weight: 800; white-space: nowrap;">
+                Generate Report
+              </button>
             </div>
           </div>
 
@@ -135,7 +180,7 @@ const ReportsView = {
               </div>
             </div>
 
-            <div class="table-responsive" style="max-height: 360px;">
+            <div class="table-responsive" style="max-height: 280px;">
               <table class="data-table">
                 <thead>
                   <tr>
@@ -225,6 +270,13 @@ const ReportsView = {
     return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount);
   },
 
+  setActiveCategory(categoryId, container, state) {
+    this.activeCategory = categoryId || 'client-management';
+    if (container) {
+      this.renderModal(container, state);
+    }
+  },
+
   bindEvents(container, state) {
     const closeBtn = container.querySelector('#btn-close-reports-modal');
     if (closeBtn) {
@@ -233,8 +285,9 @@ const ReportsView = {
 
     container.querySelectorAll('[data-report-category]').forEach(button => {
       button.addEventListener('click', () => {
-        this.activeCategory = button.dataset.reportCategory;
-        this.renderModal(container, state);
+        const nextCategory = button.dataset.reportCategory;
+        if (!nextCategory || nextCategory === this.activeCategory) return;
+        this.setActiveCategory(nextCategory, container, state);
       });
     });
 

@@ -38,9 +38,6 @@ const UserManagementView = {
             <button class="input-tab-btn ${this.activeTab === 'adduser' ? 'active' : ''}" data-tab="adduser">
               3. + Add User
             </button>
-            <button class="input-tab-btn ${this.activeTab === 'danger' ? 'active' : ''}" data-tab="danger" style="color: var(--accent-rose);">
-              4. Reset
-            </button>
           </div>
 
           <!-- Tab Content Body -->
@@ -65,8 +62,6 @@ const UserManagementView = {
         return this.renderMatrixTab(state);
       case 'adduser':
         return this.renderAddUserTab(state);
-      case 'danger':
-        return this.renderDangerTab(state);
       case 'directory':
       default:
         return this.renderDirectoryTab(state);
@@ -103,90 +98,6 @@ const UserManagementView = {
       </form>
     `;
   },
-
-  // --- TAB 4: Go-Live & Reset Wizard ---
-  renderDangerTab(state) {
-    const userCount = state.users ? state.users.length : 0;
-    const memberCount = state.members ? state.members.length : 0;
-    const txCount = state.recentTransactions ? state.recentTransactions.length : 0;
-    const syncAvail = !!window.supabase;
-    return `
-      <div style="display: flex; flex-direction: column; gap: 1.25rem;">
-
-        <!-- Status Banner -->
-        <div style="display: flex; align-items: center; gap: 0.75rem; padding: 0.85rem 1rem;
-          background: rgba(16,185,129,0.07); border: 1px solid rgba(16,185,129,0.25); border-radius: var(--radius-md);">
-          <div style="width: 10px; height: 10px; border-radius: 50%; background: var(--accent-emerald); flex-shrink: 0; box-shadow: 0 0 0 3px rgba(16,185,129,0.2);"></div>
-          <div>
-            <div style="font-size: 0.78rem; font-weight: 800; color: var(--accent-emerald); text-transform: uppercase; letter-spacing: 0.05em;">Real Operations Mode</div>
-            <div style="font-size: 0.72rem; color: var(--text-dim); margin-top: 2px;">
-              ${userCount} staff &middot; ${memberCount} members &middot; ${txCount} transactions &middot; Supabase
-              ${syncAvail ? '<strong style="color:var(--accent-emerald);">Connected</strong>' : '<strong style="color:var(--accent-amber);">Offline</strong>'}
-            </div>
-          </div>
-        </div>
-
-        <!-- STEP 1: Clear local browser -->
-        <div style="border: 1px solid var(--border-subtle); border-radius: var(--radius-md); overflow: hidden;">
-          <div style="padding: 0.75rem 1rem; background: var(--bg-surface-elevated); border-bottom: 1px solid var(--border-subtle); display: flex; align-items: center; gap: 0.6rem;">
-            <span style="font-family: var(--font-mono); font-size: 0.7rem; font-weight: 800; background: var(--accent-amber-subtle); color: var(--accent-amber); padding: 2px 7px; border-radius: 4px; border: 1px solid var(--accent-amber);">STEP 1</span>
-            <span style="font-size: 0.825rem; font-weight: 700;">Clear Local Browser Cache</span>
-          </div>
-          <div style="padding: 1rem;">
-            <p style="font-size: 0.8rem; color: var(--text-dim); margin: 0 0 0.75rem;">Wipes this browser's localStorage demo state only. Supabase data is unaffected. App reloads and pulls fresh data from the cloud.</p>
-            <div style="display: flex; align-items: center; gap: 0.6rem;">
-              <button type="button" id="btn-clear-local-cache" class="btn btn-outline" style="font-size: 0.78rem; border-color: var(--accent-amber); color: var(--accent-amber);">Clear Cache &amp; Reload</button>
-              <span style="font-size: 0.72rem; color: var(--text-muted);">Safe &middot; Reversible on next sync</span>
-            </div>
-          </div>
-        </div>
-
-        <!-- STEP 2: Supabase operational clean slate -->
-        <div style="border: 1px solid rgba(239,68,68,0.35); border-radius: var(--radius-md); overflow: hidden;">
-          <div style="padding: 0.75rem 1rem; background: rgba(239,68,68,0.04); border-bottom: 1px solid rgba(239,68,68,0.2); display: flex; align-items: center; gap: 0.6rem;">
-            <span style="font-family: var(--font-mono); font-size: 0.7rem; font-weight: 800; background: rgba(239,68,68,0.1); color: var(--accent-rose); padding: 2px 7px; border-radius: 4px; border: 1px solid var(--accent-rose);">STEP 2</span>
-            <span style="font-size: 0.825rem; font-weight: 700;">Supabase Operational Clean Slate</span>
-            <span class="badge badge-rose" style="font-size: 0.6rem; margin-left: auto;">Irreversible</span>
-          </div>
-          <div style="padding: 1rem;">
-            <p style="font-size: 0.8rem; color: var(--text-dim); margin: 0 0 0.6rem;">Deletes all <strong>demo operational data</strong> from Supabase and zeroes GL balances. Staff users, roles, and branch structure are <strong>preserved</strong>.</p>
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.4rem; margin-bottom: 0.85rem; font-size: 0.72rem;">
-              <div style="padding: 0.4rem 0.6rem; background: rgba(239,68,68,0.06); border-radius: 4px; color: var(--accent-rose);">&#x2715; ${memberCount} member records</div>
-              <div style="padding: 0.4rem 0.6rem; background: rgba(239,68,68,0.06); border-radius: 4px; color: var(--accent-rose);">&#x2715; ${txCount} transactions</div>
-              <div style="padding: 0.4rem 0.6rem; background: rgba(239,68,68,0.06); border-radius: 4px; color: var(--accent-rose);">&#x2715; Audit trail</div>
-              <div style="padding: 0.4rem 0.6rem; background: rgba(239,68,68,0.06); border-radius: 4px; color: var(--accent-rose);">&#x2715; GL balances &rarr; 0</div>
-              <div style="padding: 0.4rem 0.6rem; background: rgba(16,185,129,0.06); border-radius: 4px; color: var(--accent-emerald);">&#x2713; ${userCount} staff users</div>
-              <div style="padding: 0.4rem 0.6rem; background: rgba(16,185,129,0.06); border-radius: 4px; color: var(--accent-emerald);">&#x2713; Roles &amp; permissions</div>
-              <div style="padding: 0.4rem 0.6rem; background: rgba(16,185,129,0.06); border-radius: 4px; color: var(--accent-emerald);">&#x2713; Branch structure</div>
-              <div style="padding: 0.4rem 0.6rem; background: rgba(16,185,129,0.06); border-radius: 4px; color: var(--accent-emerald);">&#x2713; GL Chart of Accounts</div>
-            </div>
-            <div style="display: flex; flex-direction: column; gap: 0.5rem; max-width: 300px;">
-              <label class="form-label" style="font-size: 0.72rem;">Admin Authorization Password</label>
-              <input type="password" id="inp-golive-password" class="form-control" placeholder="Enter admin password" style="font-size: 0.8rem;">
-              <div id="golive-error" style="display:none; color: var(--accent-rose); font-size: 0.75rem; font-weight: 600;"></div>
-              <button type="button" id="btn-execute-golive" class="btn btn-primary" style="background: var(--accent-rose); border-color: var(--accent-rose); font-size: 0.8rem;" ${!syncAvail ? 'disabled' : ''}>
-                ${syncAvail ? 'Execute Go-Live Clean Slate' : 'Supabase Offline'}
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <!-- STEP 3: Full factory reset -->
-        <details style="border: 1px solid rgba(127,29,29,0.4); border-radius: var(--radius-md); overflow: hidden;">
-          <summary style="padding: 0.75rem 1rem; background: rgba(127,29,29,0.05); cursor: pointer; font-size: 0.78rem; font-weight: 700; color: #b91c1c; list-style: none;">&#9658; Full Factory Reset &mdash; wipes everything including staff &amp; roles (last resort)</summary>
-          <div style="padding: 1rem; border-top: 1px solid rgba(127,29,29,0.2);">
-            <p style="font-size: 0.78rem; color: var(--text-dim); margin: 0 0 0.75rem;">Destroys ALL data including staff, roles, and branches. You must re-run the full schema and seed scripts afterwards.</p>
-            <div style="display: flex; align-items: center; gap: 0.6rem;">
-              <input type="password" id="inp-purge-password" class="form-control" placeholder="Purge password" style="max-width: 200px; font-size: 0.78rem;">
-              <button type="button" id="btn-execute-purge" class="btn btn-primary" style="background: #7f1d1d; border-color: #7f1d1d; font-size: 0.78rem;">Factory Reset</button>
-            </div>
-          </div>
-        </details>
-
-      </div>
-    `;
-  },
-
 
   // --- TAB 1: User Directory ---
   renderDirectoryTab(state) {
@@ -264,7 +175,6 @@ const UserManagementView = {
       { name: 'General Ledger Multi-Ledger Journal Adjustments', teller: 'NO', mgr: 'NO', creditMaker: 'NO', creditChecker: 'NO', treasury: 'YES', audit: 'VIEW', board: 'VIEW' },
       { name: 'Parallel Non-Blocking EOD Execution', teller: 'NO', mgr: 'NO', creditMaker: 'NO', creditChecker: 'NO', treasury: 'YES', audit: 'VIEW', board: 'VIEW' },
       { name: 'System Audit Trail & SASRA Returns Export', teller: 'NO', mgr: 'VIEW', creditMaker: 'NO', creditChecker: 'VIEW', treasury: 'VIEW', audit: 'YES', board: 'YES' },
-      { name: 'Macro Stress-Testing Scenario Sliders', teller: 'NO', mgr: 'NO', creditMaker: 'NO', creditChecker: 'NO', treasury: 'VIEW', audit: 'VIEW', board: 'YES' }
     ];
 
     const getStatusTag = (val) => {
@@ -477,96 +387,6 @@ const UserManagementView = {
       });
     }
 
-    // STEP 1: Clear local browser cache only
-    const btnClearCache = container.querySelector('#btn-clear-local-cache');
-    if (btnClearCache) {
-      btnClearCache.addEventListener('click', () => {
-        if (confirm('Clear this browser\'s localStorage and reload from Supabase? Your Supabase data is not affected.')) {
-          localStorage.removeItem(store.storageKey);
-          App.showToast('Local cache cleared. Reloading…', 'info');
-          setTimeout(() => window.location.reload(), 800);
-        }
-      });
-    }
-
-    // STEP 2: Go-Live clean slate (keeps staff/roles/branches, wipes operational data)
-    const btnGoLive = container.querySelector('#btn-execute-golive');
-    if (btnGoLive) {
-      btnGoLive.addEventListener('click', async () => {
-        const pass = container.querySelector('#inp-golive-password')?.value;
-        const errEl = container.querySelector('#golive-error');
-        if (!pass) { if (errEl) { errEl.textContent = 'Password required.'; errEl.style.display = 'block'; } return; }
-        if (errEl) errEl.style.display = 'none';
-
-        // Verify against Supabase Auth
-        const currentUser = store.getCurrentUser();
-        if (!currentUser) { if (errEl) { errEl.textContent = 'No active session.'; errEl.style.display = 'block'; } return; }
-
-        const activeOrg = window.Platform?.getActiveOrg();
-        const activeSchema = window.Platform?.context?.currentOrgSchema;
-        if (!activeOrg || !activeSchema) {
-          if (errEl) { errEl.textContent = 'No active organization selected.'; errEl.style.display = 'block'; }
-          return;
-        }
-
-        if (!confirm(`Permanently clear operational data for ${activeOrg.name} only?\n\nMembers, transactions, and audit history will be deleted. GL and branch cash balances will be zeroed. This browser's organization-specific module data, including workflows, facilities, investments, expenses, alerts, and operational balances, will also be cleared.\n\nStaff users, roles, branches, and GL accounts will be preserved. This cannot be undone.`)) return;
-
-        btnGoLive.disabled = true;
-        btnGoLive.textContent = 'Executing…';
-
-        try {
-          // Verify password via Supabase auth
-          if (window.supabase) {
-            const { error } = await window.supabase.auth.signInWithPassword({
-              email: currentUser.email, password: pass
-            });
-            if (error) {
-              if (errEl) { errEl.textContent = 'Incorrect password: ' + error.message; errEl.style.display = 'block'; }
-              btnGoLive.disabled = false; btnGoLive.textContent = 'Execute Go-Live Clean Slate';
-              return;
-            }
-          }
-
-          await window.SupabaseSync.cleanTenantOperationalData();
-          store.prepareTenantState(activeSchema, true);
-
-          App.showToast(`Go-live clean slate complete for ${activeOrg.name}. Reloading…`, 'success');
-          setTimeout(() => window.location.reload(), 1800);
-        } catch (err) {
-          console.error(err);
-          App.showToast('Go-live failed: ' + err.message, 'danger');
-          btnGoLive.disabled = false;
-          btnGoLive.textContent = 'Execute Go-Live Clean Slate';
-        }
-      });
-    }
-
-    // STEP 3: Full factory reset (wipes everything)
-    const btnPurge = container.querySelector('#btn-execute-purge');
-    if (btnPurge) {
-      btnPurge.addEventListener('click', async () => {
-        const pass = container.querySelector('#inp-purge-password')?.value;
-        if (pass !== 'admin123') {
-          App.showToast('Invalid authorization password.', 'danger');
-          return;
-        }
-        if (confirm('CRITICAL: This deletes ALL data including staff users, roles, and branches. You must re-run the schema scripts afterwards. Proceed?')) {
-          btnPurge.textContent = 'Purging…';
-          btnPurge.disabled = true;
-          try {
-            await store.purgeSupabase();
-            App.showToast('Full factory reset complete. Reloading…', 'success');
-            setTimeout(() => window.location.reload(), 1500);
-          } catch (err) {
-            console.error(err);
-            App.showToast('Factory reset failed: ' + err.message, 'danger');
-            btnPurge.textContent = 'Factory Reset';
-            btnPurge.disabled = false;
-          }
-        }
-      });
-    }
-
     // Edit roles buttons
     const editBtns = container.querySelectorAll('.btn-edit-roles');
     editBtns.forEach(btn => {
@@ -625,6 +445,10 @@ const UserManagementView = {
   },
 
   open() {
+    if (!App.hasPermission('MANAGE_USERS')) {
+      App.showToast('You do not have permission to manage users.', 'danger');
+      return;
+    }
     const modal = document.getElementById('user-mgmt-modal');
     if (modal) {
       modal.classList.add('active');

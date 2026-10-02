@@ -122,13 +122,6 @@ const CoreBankingEngine = {
       requiresMember: false,
       description: 'Receive borrowings into bank clearing account, credit DFI liability'
     },
-    'EOD Interest Accrual': {
-      label: 'Parallel EOD Loan Interest Accrual',
-      defaultDebit: '1200',
-      defaultCredit: '4010',
-      requiresMember: false,
-      description: 'Debit loan portfolio receivable, credit earned interest income'
-    }
   },
 
   /**
@@ -568,57 +561,6 @@ const CoreBankingEngine = {
       totalDailyTurnover,
       avgLatencyMs
     };
-  },
-
-  /**
-   * Non-blocking parallel End-of-Day (EOD) accrual:
-   * Posts daily loan interest accrual and fee sweep strictly through the Double-Entry Engine.
-   */
-  runParallelEOD(state) {
-    const interestAccrued = 18450; // daily interest on performing loans
-    const feesCollected = 4200;
-
-    // Post 1: Interest Accrual (Dr 1200 Gross Loans / Cr 4010 Interest Income)
-    const eodInterestLegs = [
-      { glCode: '1200', type: 'Debit', amount: interestAccrued },
-      { glCode: '4010', type: 'Credit', amount: interestAccrued }
-    ];
-
-    const post1 = this.executePosting(state, {
-      type: 'EOD Interest Accrual',
-      description: `Daily performing loan interest accrual of $${interestAccrued.toLocaleString()}`,
-      legs: eodInterestLegs,
-      channel: 'Parallel EOD Engine'
-    });
-
-    // Post 2: Daily Automated Ledger Fee Sweep (Dr 1010 Cash / Cr 4030 Fee Income)
-    const eodFeeLegs = [
-      { glCode: '1010', type: 'Debit', amount: feesCollected },
-      { glCode: '4030', type: 'Credit', amount: feesCollected }
-    ];
-
-    const post2 = this.executePosting(state, {
-      type: 'Fee & Service Charge',
-      description: `Daily automated ledger & channel fee collection of $${feesCollected.toLocaleString()}`,
-      legs: eodFeeLegs,
-      channel: 'Parallel EOD Engine'
-    });
-
-    state.auditTrail.unshift({
-      id: `AUD-EOD-${Date.now().toString().slice(-4)}`,
-      timestamp: new Date().toISOString(),
-      userId: 'system_daemon_eod',
-      userName: 'Parallel EOD Engine (Non-Blocking)',
-      action: 'EOD_DOUBLE_ENTRY_BATCH_COMPLETED',
-      module: 'Core Banking Engine (Layer 0)',
-      entityId: `EOD-${new Date().toISOString().slice(0, 10)}`,
-      description: `Accrued $${interestAccrued.toLocaleString()} loan interest (Dr 1200 / Cr 4010) and $${feesCollected.toLocaleString()} fees (Dr 1010 / Cr 4030) without blocking counter availability.`,
-      ipAddress: '127.0.0.1 (Internal Service)',
-      glImpact: `Dr 1200 $${interestAccrued} / Cr 4010 $${interestAccrued} & Dr 1010 $${feesCollected} / Cr 4030 $${feesCollected}`
-    });
-
-    store.save();
-    return { interestAccrued, feesCollected, post1, post2 };
   },
 
   /**

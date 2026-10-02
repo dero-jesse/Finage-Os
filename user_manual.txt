@@ -105,7 +105,6 @@ The journal requires equal debit and credit amounts, two different valid account
 - Select Verify Ledger to run a trial-balance/accounting-equation check. Review any flagged variance before further posting and notify the finance supervisor.
 - Select Trial Balance or Balance Sheet to export the relevant report.
 - Use the Input Hub's DFI tab to register a facility or record a drawdown. A drawdown posts using the configured bank and DFI liability accounts; verify the facility availability and destination bank before submission.
-- Parallel EOD is a system action that posts configured accrual/fee entries. Run it only when authorized and at the time approved by your finance procedure.
 
 7. ORGANIZATION SETUP AND MIGRATION
 -----------------------------------
@@ -142,7 +141,7 @@ Assign only the access needed for a person's duties. Confirm roles, branch, stat
 
 10. BOARD, AUDIT, AND REPORTING
 -------------------------------
-The Board workspace provides portfolio, liquidity, forecast, stress-test, and audit-related views and exports. Stress-test controls change a scenario analysis; they do not post financial transactions. Use export buttons only for authorized oversight or reporting work, and validate the period and organization before sharing results.
+The Board workspace provides portfolio, liquidity, cash forecast, and audit-related views and exports. Forecasts are planning information, not posted transactions or guaranteed outcomes. Use export buttons only for authorized oversight or reporting work, and validate the period and organization before sharing results.
 
 11. COMMON PROBLEMS
 -------------------

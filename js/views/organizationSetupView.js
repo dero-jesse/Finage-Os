@@ -21,7 +21,9 @@ const OrganizationSetupView = {
   open() {
     const currentUser = store.getCurrentUser();
     const roles = currentUser ? UserManagementEngine.getUserRoles(store.state, currentUser.id) : [];
-    const canManage = roles.some(role => role.permissions.includes('MANAGE_USERS'));
+    const canManage = store.state.isAuthenticated && roles.some(role =>
+      role.permissions.includes('READ_ALL_MODULES') || role.permissions.includes('MANAGE_USERS')
+    );
     if (!canManage) {
       App.showToast('Organization administrator permission is required to edit setup.', 'danger');
       return;

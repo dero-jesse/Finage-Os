@@ -11,6 +11,19 @@ const InputModalView = {
   },
 
   renderModal(container, state) {
+    const tabDefinitions = [
+      { id: 'members', label: '0. New Member' },
+      { id: 'transactions', label: '1. Transactions' },
+      { id: 'loans', label: '2. Loans' },
+      { id: 'dfi', label: '3. DFI' },
+      { id: 'opex', label: '4. Opex' },
+      { id: 'bulk', label: '5. CSV' },
+      { id: 'journal', label: '6. GL Journal' }
+    ].filter(tab => App.canUseInputTab(tab.id, state));
+    if (!tabDefinitions.some(tab => tab.id === this.activeTab)) {
+      this.activeTab = tabDefinitions[0]?.id || 'transactions';
+    }
+
     container.innerHTML = `
       <div class="modal-backdrop" id="universal-input-modal">
         <div class="modal-container" style="max-width: 780px;">
@@ -31,27 +44,11 @@ const InputModalView = {
 
           <!-- Modal Navigation Tabs -->
           <div style="display: flex; align-items: center; border-bottom: 1px solid var(--border-subtle); padding: 0 1.5rem; background: #f8fafc; overflow-x: auto; gap: 0.5rem;">
-            <button class="input-tab-btn ${this.activeTab === 'members' ? 'active' : ''}" data-tab="members">
-              0. New Member
-            </button>
-            <button class="input-tab-btn ${this.activeTab === 'transactions' ? 'active' : ''}" data-tab="transactions">
-              1. Transactions
-            </button>
-            <button class="input-tab-btn ${this.activeTab === 'loans' ? 'active' : ''}" data-tab="loans">
-              2. Loans
-            </button>
-            <button class="input-tab-btn ${this.activeTab === 'dfi' ? 'active' : ''}" data-tab="dfi">
-              3. DFI
-            </button>
-            <button class="input-tab-btn ${this.activeTab === 'opex' ? 'active' : ''}" data-tab="opex">
-              4. Opex
-            </button>
-            <button class="input-tab-btn ${this.activeTab === 'bulk' ? 'active' : ''}" data-tab="bulk">
-              5. CSV
-            </button>
-            <button class="input-tab-btn ${this.activeTab === 'journal' ? 'active' : ''}" data-tab="journal">
-              6. GL Journal
-            </button>
+            ${tabDefinitions.map(tab => `
+              <button class="input-tab-btn ${this.activeTab === tab.id ? 'active' : ''}" data-tab="${tab.id}">
+                ${tab.label}
+              </button>
+            `).join('')}
           </div>
 
           <!-- Modal Body with Dynamic Tab Content -->
@@ -66,6 +63,7 @@ const InputModalView = {
   },
 
   renderActiveTab(state) {
+    if (!App.canUseInputTab(this.activeTab, state)) return '';
     switch (this.activeTab) {
       case 'members':
         return this.renderMemberTab(state);
@@ -514,9 +512,6 @@ const InputModalView = {
           <span style="font-size: 0.825rem; font-weight: 600; color: var(--text-main);">
             Core Banking Batch Transaction Ingestion Stream
           </span>
-          <button id="btn-load-sample-csv" class="btn btn-secondary btn-sm">
-            Load Pre-Formatted Institutional Sample Stream
-          </button>
         </div>
 
         <div class="form-group" style="margin: 0;">
@@ -877,18 +872,7 @@ const InputModalView = {
     }
 
     // TAB 5: Bulk Ingestion
-    const loadSampleBtn = container.querySelector('#btn-load-sample-csv');
     const bulkTextarea = container.querySelector('#inp-bulk-csv');
-    if (loadSampleBtn && bulkTextarea) {
-      loadSampleBtn.addEventListener('click', () => {
-        bulkTextarea.value = `Member Deposit,MEM-1001,45000,M-Pesa B2C/C2B,Agri Harvest Bulk Settlement
-Loan Repayment,MEM-1002,14200,Branch FOSA Counter,Monthly Fleet Loan Installment
-Share Capital Purchase,MEM-1003,25000,Commercial Bank Transfer,SACCO Equity Share Purchase
-Member Deposit,MEM-1004,18000,SACCO Agency Network,Dairy Co-op Milk Payout
-Loan Repayment,MEM-1001,9400,M-Pesa B2C/C2B,Agri Expansion Loan Installment`;
-      });
-    }
-
     const processBulkBtn = container.querySelector('#btn-process-bulk-csv');
     if (processBulkBtn && bulkTextarea) {
       processBulkBtn.addEventListener('click', () => {
@@ -923,6 +907,15 @@ Loan Repayment,MEM-1001,9400,M-Pesa B2C/C2B,Agri Expansion Loan Installment`;
   },
 
   open() {
+    if (!App.canOpenInputHub()) {
+      App.showToast('You do not have permission to use the Input Hub.', 'danger');
+      return;
+    }
+    const container = document.getElementById('input-modal-mount');
+    if (container) this.renderModal(container, store.state);
+    const allowedTabs = ['members', 'transactions', 'loans', 'dfi', 'opex', 'bulk', 'journal']
+      .filter(tab => App.canUseInputTab(tab));
+    if (!allowedTabs.includes(this.activeTab)) this.activeTab = allowedTabs[0];
     const modal = document.getElementById('universal-input-modal');
     if (modal) {
       modal.classList.add('active');

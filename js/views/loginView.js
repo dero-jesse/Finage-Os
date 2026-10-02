@@ -111,32 +111,6 @@ const LoginView = {
               '<span style="color: var(--accent-amber); font-weight: 700;">◐ OFFLINE MODE</span> · Local credential lookup only'}
           </div>
 
-          <!-- Quick Operator Select Presets (dev/demo only, shown when offline) -->
-          ${!window.supabase ? `
-          <div style="border-top: 1px solid var(--border-subtle); padding-top: 1rem; text-align: left;">
-            <div style="font-size: 0.7rem; font-weight: 700; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.65rem;">
-              QUICK ACCESS <span style="color: var(--accent-amber); font-weight: 800;">(offline only)</span>
-            </div>
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.45rem;">
-              <button class="btn btn-secondary btn-sm btn-quick-login" data-email="superuser@finage.io" style="font-size: 0.68rem; justify-content: flex-start; text-align: left;">
-                Platform Superuser
-              </button>
-              <button class="btn btn-secondary btn-sm btn-quick-login" data-email="caroline.wanjala@finage.co.ke" style="font-size: 0.68rem; justify-content: flex-start; text-align: left;">
-                Treasury Manager
-              </button>
-              <button class="btn btn-secondary btn-sm btn-quick-login" data-email="faith.mwangi@finage.co.ke" style="font-size: 0.68rem; justify-content: flex-start; text-align: left;">
-                FOSA
-              </button>
-              <button class="btn btn-secondary btn-sm btn-quick-login" data-email="david.ochieng@finage.co.ke" style="font-size: 0.68rem; justify-content: flex-start; text-align: left;">
-                Teller
-              </button>
-              <button class="btn btn-secondary btn-sm btn-quick-login" data-email="brian.komen@finage.co.ke" style="font-size: 0.68rem; justify-content: flex-start; text-align: left;">
-                Credit Checker
-              </button>
-            </div>
-          </div>
-          ` : ''}
-
         </div>
       </div>
     `;
@@ -197,22 +171,6 @@ const LoginView = {
         }
       });
     }
-
-    // Quick login buttons (offline/dev mode only)
-    container.querySelectorAll('.btn-quick-login').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        const email = e.currentTarget.dataset.email;
-        if (email) {
-          const emailInput = container.querySelector('#login-email');
-          if (emailInput) emailInput.value = email;
-          // In offline mode, use sync login
-          const success = UserManagementEngine.login(store.state, email);
-          if (success) {
-            store.save();
-          }
-        }
-      });
-    });
   }
 };
 

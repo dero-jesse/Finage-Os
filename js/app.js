@@ -4,6 +4,55 @@
  */
 
 const App = {
+  getUserRoles(state = store.state) {
+    const user = store.getCurrentUser();
+    return user ? UserManagementEngine.getUserRoles(state, user.id) : [];
+  },
+
+  hasPermission(permission, state = store.state) {
+    const user = store.getCurrentUser();
+    return !!state.isAuthenticated && !!user && this.getUserRoles(state).some(role =>
+      role.permissions.includes('READ_ALL_MODULES') || role.permissions.includes(permission)
+    );
+  },
+
+  hasAnyPermission(permissions, state = store.state) {
+    return permissions.some(permission => this.hasPermission(permission, state));
+  },
+
+  canAccessWorkspace(workspace, state = store.state) {
+    if (!state.isAuthenticated) return false;
+    const roles = this.getUserRoles(state);
+    if (roles.some(role => role.permissions.includes('READ_ALL_MODULES'))) return true;
+    const categories = workspace === 'teller' ? ['teller', 'counter-ops'] : [workspace];
+    return roles.some(role => categories.includes(role.category));
+  },
+
+  canUseInputTab(tab, state = store.state) {
+    if (!state.isAuthenticated) return false;
+    const roles = this.getUserRoles(state);
+    const hasCategory = (...categories) => roles.some(role => categories.includes(role.category));
+    const permissions = {
+      members: () => this.hasPermission('MANAGE_USERS', state) || hasCategory('front-office'),
+      transactions: () => this.hasPermission('POST_COUNTER_TX', state),
+      loans: () => this.hasAnyPermission(['ORIGINATE_LOAN_APP', 'APPROVE_CREDIT_FACILITY', 'APPROVE_BRANCH_LOAN_TIER1'], state),
+      dfi: () => this.hasAnyPermission(['EXECUTE_DFI_DRAWDOWN', 'MODIFY_GL_JOURNAL', 'PLACE_TBILLS'], state),
+      opex: () => this.hasAnyPermission(['MODIFY_GL_JOURNAL', 'EXECUTE_DFI_DRAWDOWN'], state),
+      bulk: () => this.hasAnyPermission(['POST_COUNTER_TX', 'MODIFY_GL_JOURNAL', 'APPROVE_CREDIT_FACILITY', 'ORIGINATE_LOAN_APP', 'EXECUTE_DFI_DRAWDOWN'], state),
+      journal: () => this.hasPermission('MODIFY_GL_JOURNAL', state)
+    };
+    return !!permissions[tab]?.();
+  },
+
+  canOpenInputHub(state = store.state) {
+    return ['members', 'transactions', 'loans', 'dfi', 'opex', 'bulk', 'journal']
+      .some(tab => this.canUseInputTab(tab, state));
+  },
+
+  canOpenReports(state = store.state) {
+    return this.hasAnyPermission(['REPORTS_ACCESS', 'MANAGE_USERS'], state);
+  },
+
   init() {
     this.viewport = document.getElementById('main-viewport');
     this.tickerBar = document.getElementById('liquidity-ticker-bar');
@@ -25,8 +74,10 @@ const App = {
     this.roleButtons.forEach(btn => {
       btn.addEventListener('click', (e) => {
         const targetRole = e.currentTarget.dataset.role;
-        if (targetRole) {
+        if (targetRole && this.canAccessWorkspace(targetRole)) {
           store.setRole(targetRole);
+        } else {
+          this.showToast('Your role does not have access to that workspace.', 'danger');
         }
       });
     });
@@ -47,7 +98,7 @@ const App = {
     }
     if (this.orgSetupMount) OrganizationSetupView.renderModal(this.orgSetupMount, store.state);
 
-    // Setup Global Input Hub, User Mgmt & Quick Simulation Actions
+    // Setup global input, user-management, and quick actions
     this.bindQuickActions();
 
     // Subscribe to state changes
@@ -60,6 +111,8 @@ const App = {
   },
 
   render(state) {
+    this.populatePortalDrawer();
+    this.populateUtilityMenu();
     if (this.reportsMount && this.reportsMount.innerHTML.trim()) {
       ReportsView.renderModal(this.reportsMount, state);
     }
@@ -76,19 +129,10 @@ const App = {
     }
 
     // 1. Update Header Role Buttons Active State & Enforce RBAC
-    const currentUser = store.getCurrentUser();
-    const currentRoleObjs = currentUser ? UserManagementEngine.getUserRoles(state, currentUser.id) : [];
-    const canReadAll = currentRoleObjs.some(r => r.permissions.includes('READ_ALL_MODULES'));
-    
     this.roleButtons.forEach(btn => {
       const btnRole = btn.dataset.role;
       const normalizedRole = btnRole === 'counter-ops' ? 'teller' : btnRole;
-      
-      if (canReadAll || currentRoleObjs.some(r => r.category === normalizedRole || (normalizedRole === 'teller' && (r.category === 'teller' || r.category === 'counter-ops')))) {
-        btn.style.display = 'flex';
-      } else {
-        btn.style.display = 'none';
-      }
+      btn.style.display = this.canAccessWorkspace(normalizedRole, state) ? 'flex' : 'none';
 
       const currentNormRole = state.currentRole === 'counter-ops' ? 'teller' : state.currentRole;
       if (normalizedRole === currentNormRole) {
@@ -353,7 +397,18 @@ const App = {
       ]}
     ];
 
-    list.innerHTML = portalGroups.map(group => `
+    const visibleGroups = portalGroups.map(group => ({
+      ...group,
+      items: group.items.filter(item => {
+        if (item.role) return this.canAccessWorkspace(item.role);
+        if (item.action === 'dashboard') return true;
+        if (item.action === 'users' || item.action === 'org-setup') return this.hasPermission('MANAGE_USERS');
+        if (item.action === 'reports') return this.canOpenReports();
+        return false;
+      })
+    })).filter(group => group.items.length);
+
+    list.innerHTML = visibleGroups.map(group => `
       <div class="drawer-group">
         <div class="drawer-group-label">${group.label}</div>
         <div class="drawer-menu-items">
@@ -392,33 +447,10 @@ const App = {
     if (!list) return;
 
     const items = [
-      { label: 'Input Hub', action: () => InputModalView.open() },
-      { label: 'Users', action: () => UserManagementView.open() },
-      { label: 'Organization Setup', action: () => OrganizationSetupView.open() },
-      { label: 'Reports', action: () => ReportsView.open() },
-      { label: 'Mobile Inflow', action: () => {
-        const simAmount = 250000;
-        CoreBankingEngine.executeTransaction(store.state, {
-          type: 'Bulk M-Pesa C2B Inflow Shock',
-          memberId: null,
-          amount: simAmount,
-          channel: 'M-Pesa B2C/C2B',
-          debitGL: '1040',
-          creditGL: '2010',
-          description: `Institutional Member Mobile Inflow (+${Formatter.money(simAmount)})`
-        });
-        App.showToast(`Simulated +${Formatter.money(simAmount)} Bulk M-Pesa C2B Inflow. Instant GL Dr 1040 / Cr 2010 posted.`, 'success');
-      } },
-      { label: 'Reset Data', action: () => {
-        const tenantActive = !!window.Platform?.context?.currentOrgSchema;
-        const prompt = tenantActive
-          ? 'Clear this organization\'s local operational cache and reload its cloud data? Cloud records will not be deleted.'
-          : 'Reset Finage OS to v3 institutional baseline demo data?';
-        if (confirm(prompt)) {
-          const mode = store.resetState();
-          this.showToast(mode === 'tenant' ? 'Organization cache cleared; loading its cloud data.' : 'System reset to v3 institutional demo data.', 'info');
-        }
-      } },
+      ...(this.canOpenInputHub() ? [{ label: 'Input Hub', action: () => InputModalView.open() }] : []),
+      ...(this.hasPermission('MANAGE_USERS') ? [{ label: 'Users', action: () => UserManagementView.open() }] : []),
+      ...(this.hasPermission('MANAGE_USERS') ? [{ label: 'Organization Setup', action: () => OrganizationSetupView.open() }] : []),
+      ...(this.canOpenReports() ? [{ label: 'Reports', action: () => ReportsView.open() }] : []),
       { label: 'Sign Out', action: async () => {
         await UserManagementEngine.logout(store.state);
         store.save();
@@ -620,24 +652,6 @@ const App = {
       }
     });
 
-    const btnSimulateDeposit = document.getElementById('btn-quick-deposit');
-    if (btnSimulateDeposit) {
-      btnSimulateDeposit.addEventListener('click', () => {
-        const simAmount = 250000;
-        CoreBankingEngine.executeTransaction(store.state, {
-          type: 'Bulk M-Pesa C2B Inflow Shock',
-          memberId: null,
-          amount: simAmount,
-          channel: 'M-Pesa B2C/C2B',
-          debitGL: '1040',
-          creditGL: '2010',
-          description: `Institutional Member Mobile Inflow (+${Formatter.money(simAmount)})`
-        });
-        this.showToast(`Simulated +${Formatter.money(simAmount)} Bulk M-Pesa C2B Inflow. Instant GL Dr 1040 / Cr 2010 posted.`, 'success');
-      });
-    }
-
-
     const btnSync = document.getElementById('sync-status-badge');
     if (btnSync) {
       btnSync.addEventListener('click', async () => {
@@ -650,20 +664,6 @@ const App = {
           } catch (e) {
             this.showToast(`Sync error: ${e.message}`, 'danger');
           }
-        }
-      });
-    }
-
-    const btnReset = document.getElementById('btn-reset-data');
-    if (btnReset) {
-      btnReset.addEventListener('click', () => {
-        const tenantActive = !!window.Platform?.context?.currentOrgSchema;
-        const prompt = tenantActive
-          ? 'Clear this organization\'s local operational cache and reload its cloud data? Cloud records will not be deleted.'
-          : 'Reset Finage OS to v3 institutional baseline demo data?';
-        if (confirm(prompt)) {
-          const mode = store.resetState();
-          this.showToast(mode === 'tenant' ? 'Organization cache cleared; loading its cloud data.' : 'System reset to v3 institutional demo data.', 'info');
         }
       });
     }

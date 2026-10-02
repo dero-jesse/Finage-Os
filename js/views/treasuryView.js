@@ -36,9 +36,6 @@ const TreasuryView = {
             <button id="btn-validate-ledger-now" class="btn btn-outline btn-sm" title="Trigger instant trial balance check across the entire ledger">
               Verify Ledger
             </button>
-            <button id="btn-run-parallel-eod" class="btn btn-secondary btn-sm">
-              Parallel EOD
-            </button>
             <button id="btn-export-trial-balance" class="btn btn-secondary btn-sm">
               Trial Balance
             </button>
@@ -273,16 +270,6 @@ const TreasuryView = {
         } else {
           App.showToast(`⚠ Accounting break detected! Variance: ${Formatter.money(res.variance)}. Exception logged to Layer 7.`, 'danger');
         }
-        this.render(container, state);
-      });
-    }
-
-    // Parallel EOD Accrual
-    const eodBtn = container.querySelector('#btn-run-parallel-eod');
-    if (eodBtn) {
-      eodBtn.addEventListener('click', () => {
-        const res = CoreBankingEngine.runParallelEOD(state);
-        App.showToast(`Parallel EOD executed: Accrued ${Formatter.money(res.interestAccrued)} loan interest without blocking counter availability.`, 'success');
         this.render(container, state);
       });
     }

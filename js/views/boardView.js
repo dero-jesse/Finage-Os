@@ -1,6 +1,6 @@
 /**
  * Finage OS v3 - Layer 9: Board & Executive Governance View
- * Macro cash flow projections, system audit trail oversight, SASRA returns, and stress testing lab
+ * Macro cash flow projections, system audit trail oversight, and SASRA returns
  */
 
 const BoardView = {
@@ -9,14 +9,9 @@ const BoardView = {
     const liquidity = CashEngine.calculateLiquidityRatios(state);
     const forecastHorizon = state.forecastHorizon || 'monthly';
     const projections = ForecastEngine.generateProjections(state, forecastHorizon);
-    const stressResult = StressTestEngine.runSimulation(state);
     const segmentation = RIMEngine.getSegmentationSummary(state);
 
     const newActions = `
-      <select id="system-currency-select" class="dropdown-select" style="margin-right: 0.5rem;">
-        <option value="KES" ${state.baseCurrency === 'KES' ? 'selected' : ''}>KES Base</option>
-        <option value="USD" ${state.baseCurrency === 'USD' ? 'selected' : ''}>USD Base</option>
-      </select>
       <button id="btn-export-forecast-csv" class="btn btn-outline" style="margin-right: 0.5rem;">
         Forecast CSV
       </button>
@@ -139,87 +134,6 @@ const BoardView = {
         </div>
       </div>
 
-      <!-- Interactive Scenario & Liquidity Stress-Testing Laboratory -->
-      <div class="panel-grid">
-        <div class="glass-panel col-12">
-          <div class="panel-header">
-            <div class="panel-title-wrap">
-              <span class="panel-title" style="color: var(--accent-rose);">Stress Testing</span>
-            </div>
-            <span class="badge badge-rose">Scenario Simulation</span>
-          </div>
-
-          <div class="stress-lab-box">
-            <div class="panel-grid" style="margin-bottom: 0;">
-              <!-- Stress Sliders -->
-              <div class="col-6" style="display: flex; flex-direction: column; gap: 0.5rem;">
-                <div class="slider-group">
-                  <div class="slider-header">
-                    <span class="slider-label">Member Withdrawal Surge Shock:</span>
-                    <span class="slider-val" id="val-shock-withdraw">+${state.stressTesting.withdrawalSpikePct}%</span>
-                  </div>
-                  <input type="range" id="slider-withdraw" class="range-slider" min="0" max="60" step="5" value="${state.stressTesting.withdrawalSpikePct}">
-                </div>
-
-                <div class="slider-group">
-                  <div class="slider-header">
-                    <span class="slider-label">Loan Repayment Collection Drop:</span>
-                    <span class="slider-val" id="val-shock-repay">-${state.stressTesting.repaymentDropPct}%</span>
-                  </div>
-                  <input type="range" id="slider-repay" class="range-slider" min="0" max="50" step="5" value="${state.stressTesting.repaymentDropPct}">
-                </div>
-
-                <div class="slider-group">
-                  <div class="slider-header">
-                    <span class="slider-label">External DFI Drawdown Delay:</span>
-                    <span class="slider-val" id="val-shock-delay">${state.stressTesting.dfiDrawdownDelayDays} Days</span>
-                  </div>
-                  <input type="range" id="slider-delay" class="range-slider" min="0" max="90" step="15" value="${state.stressTesting.dfiDrawdownDelayDays}">
-                </div>
-              </div>
-
-              <!-- Stress Test Trajectory Chart -->
-              <div class="col-6">
-                <div class="chart-container" style="min-height: 220px;">
-                  <canvas id="stressChartCanvas"></canvas>
-                </div>
-              </div>
-            </div>
-
-            <!-- Dynamic Stress Test Results Banner -->
-            <div class="stress-result-banner">
-              <div class="stress-kpi">
-                <span class="stress-kpi-title">30-Day Cash</span>
-                <span class="stress-kpi-val" style="color: ${stressResult.stressedCashDay30 < 4275000 ? 'var(--accent-rose)' : 'var(--accent-cyan)'};">
-                  ${Formatter.money(stressResult.stressedCashDay30)}
-                </span>
-              </div>
-
-              <div class="stress-kpi">
-                <span class="stress-kpi-title">Liquidity Ratio</span>
-                <span class="stress-kpi-val" style="color: ${stressResult.stressedLiquidityRatio30d < 15.0 ? 'var(--accent-rose)' : 'var(--accent-emerald)'};">
-                  ${stressResult.stressedLiquidityRatio30d.toFixed(1)}%
-                </span>
-              </div>
-
-              <div class="stress-kpi">
-                <span class="stress-kpi-title">Breach Point</span>
-                <span class="stress-kpi-val" style="color: ${stressResult.regulatoryBreachDay ? 'var(--accent-rose)' : 'var(--accent-emerald)'};">
-                  ${stressResult.regulatoryBreachDay ? `Breach on Day ${stressResult.regulatoryBreachDay}` : 'No Breach in 90D'}
-                </span>
-              </div>
-
-              <div class="stress-kpi">
-                <span class="stress-kpi-title">Runway</span>
-                <span class="stress-kpi-val" style="color: ${stressResult.runwayDays < 60 ? 'var(--accent-amber)' : 'var(--accent-purple)'};">
-                  ${stressResult.runwayDays > 365 ? '12+ Months' : `${stressResult.runwayDays} Days`}
-                </span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
       <!-- Immutable System Audit Trail (Layer 7) -->
       <div class="panel-grid">
         <div class="glass-panel col-12">
@@ -271,7 +185,6 @@ const BoardView = {
 
     setTimeout(() => {
       ChartManager.renderForecastChart('forecastCanvas', projections);
-      ChartManager.renderStressTrajectoryChart('stressChartCanvas', stressResult);
     }, 50);
 
     this.bindEvents(container, state);
@@ -285,40 +198,6 @@ const BoardView = {
         store.setForecastHorizon(horizon);
       });
     });
-
-    const sliderWithdraw = container.querySelector('#slider-withdraw');
-    const sliderRepay = container.querySelector('#slider-repay');
-    const sliderDelay = container.querySelector('#slider-delay');
-
-    const updateStressUI = () => {
-      const wVal = parseFloat(sliderWithdraw.value);
-      const rVal = parseFloat(sliderRepay.value);
-      const dVal = parseInt(sliderDelay.value);
-
-      container.querySelector('#val-shock-withdraw').textContent = `+${wVal}%`;
-      container.querySelector('#val-shock-repay').textContent = `-${rVal}%`;
-      container.querySelector('#val-shock-delay').textContent = `${dVal} Days`;
-
-      store.updateStressParameters({
-        withdrawalSpikePct: wVal,
-        repaymentDropPct: rVal,
-        dfiDrawdownDelayDays: dVal
-      });
-    };
-
-    if (sliderWithdraw) sliderWithdraw.addEventListener('input', updateStressUI);
-    if (sliderRepay) sliderRepay.addEventListener('input', updateStressUI);
-    if (sliderDelay) sliderDelay.addEventListener('input', updateStressUI);
-
-    
-    const currencySelect = container.querySelector('#system-currency-select');
-    if (currencySelect) {
-      currencySelect.addEventListener('change', (e) => {
-        store.setBaseCurrency(e.target.value);
-        App.showToast(`Institution base currency updated to ${e.target.value}`, 'success');
-        App.render();
-      });
-    }
 
     const auditBtn = container.querySelector('#btn-export-audit-log');
     if (auditBtn) {

@@ -77,7 +77,7 @@ class FinageStore {
         { id: 'ROLE-CREDIT-CHECKER', name: 'Head of Credit & Checker', category: 'credit', permissions: ['APPROVE_CREDIT_FACILITY', 'PACING_RELEASE_AUTHORIZE', 'OVERRIDE_NPA_PROVISION'] },
         { id: 'ROLE-TREASURY', name: 'Treasury & Liquidity Officer', category: 'treasury', permissions: ['EXECUTE_DFI_DRAWDOWN', 'RECONCILE_BANKS', 'PLACE_TBILLS', 'MODIFY_GL_JOURNAL', 'RUN_PARALLEL_EOD', 'REPORTS_ACCESS'] },
         { id: 'ROLE-AUDITOR', name: 'Risk Lead & Internal Auditor', category: 'board', permissions: ['VIEW_AUDIT_LOGS', 'EXPORT_SASRA_RETURNS', 'MONITOR_AML_CFT', 'READ_ALL_MODULES', 'REPORTS_ACCESS'] },
-        { id: 'ROLE-BOARD-CHAIR', name: 'Board Chairman & ALCO Lead', category: 'board', permissions: ['GOVERNANCE_OVERVIEW', 'STRESS_TEST_SIMULATION', 'BOARD_ESCALATION_APPROVE', 'POLICY_THRESHOLD_CONFIG', 'REPORTS_ACCESS'] },
+        { id: 'ROLE-BOARD-CHAIR', name: 'Board Chairman & ALCO Lead', category: 'board', permissions: ['GOVERNANCE_OVERVIEW', 'BOARD_ESCALATION_APPROVE', 'POLICY_THRESHOLD_CONFIG', 'REPORTS_ACCESS'] },
         { id: 'ROLE-MEMBER', name: 'Customer / SACCO Member', category: 'member', permissions: ['VIEW_OWN_BALANCE', 'VIEW_OWN_LOANS'] }
       ],
 
@@ -914,7 +914,7 @@ class FinageStore {
     this.notify();
   }
 
-  prepareTenantState(schemaName, forceClean = false) {
+  prepareTenantState(schemaName) {
     const activeSchemaKey = 'finage_active_data_schema';
     const previousSchema = localStorage.getItem(activeSchemaKey);
     const localDataKeys = [
@@ -932,12 +932,10 @@ class FinageStore {
 
     const cleanState = this.getCleanState();
     let savedTenantData = previousSchema === schemaName ? currentData : null;
-    if (!forceClean && previousSchema !== schemaName) {
+    if (previousSchema !== schemaName) {
       try {
         savedTenantData = JSON.parse(localStorage.getItem(`finage_tenant_modules_${schemaName}`) || 'null');
       } catch (_) {}
-    } else {
-      localStorage.removeItem(`finage_tenant_modules_${schemaName}`);
     }
 
     localDataKeys.forEach(key => {
@@ -1774,34 +1772,10 @@ class FinageStore {
     return true;
   }
 
-  updateStressParameters(params) {
-    this.state.stressTesting = { ...this.state.stressTesting, ...params };
-    this.save();
-  }
-
-  async purgeSupabase() {
-    if (!window.supabase) return;
-    console.log("Purging all data from Supabase...");
-    
-    // Delete in reverse dependency order
-    await supabase.from('audit_trail').delete().neq('id', 'dummy');
-    await supabase.from('transactions').delete().neq('id', 'dummy');
-    await supabase.from('members').delete().neq('id', 'dummy');
-    await supabase.from('users').delete().neq('id', 'dummy');
-    await supabase.from('branches').delete().neq('id', 'dummy');
-    await supabase.from('general_ledger').delete().neq('code', 'dummy');
-    await supabase.from('roles').delete().neq('id', 'dummy');
-    
-    // Clear local state storage
-    localStorage.removeItem(this.storageKey);
-    localStorage.setItem('finage_clean_slate', 'true');
-  }
-
   getCleanState() {
     const base = this.getDefaultState();
     
-    // Keep all staff users on clean slate — only zero out operational data
-    // (Do not wipe staff directory on reset; only clear transactions/balances)
+    // Preserve the tenant's organizational structure and start operational data empty.
     
     // Clear operational lists
     base.members = [];
@@ -1850,28 +1824,6 @@ class FinageStore {
     return base;
   }
 
-  resetState() {
-    const schemaName = window.Platform?.context?.currentOrgSchema;
-    if (schemaName) {
-      this.prepareTenantState(schemaName, true);
-      const activeOrg = window.Platform.getActiveOrg();
-      if (activeOrg) {
-        this.state.institution.name = activeOrg.name;
-        this.state.institution.type = activeOrg.type;
-        this.state.institution.baseCurrency = activeOrg.base_currency || 'UGX';
-        this.state.institution.financialYear = activeOrg.financial_year || '2026';
-      }
-      this.saveLocal();
-      if (window.SupabaseSync) {
-        window.SupabaseSync.init(this).catch(error => console.warn('[Store] Tenant refresh failed:', error));
-      }
-      return 'tenant';
-    }
-
-    this.state = this.getDefaultState();
-    this.save();
-    return 'demo';
-  }
 }
 
 window.store = new FinageStore();

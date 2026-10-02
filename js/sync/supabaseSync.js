@@ -404,57 +404,6 @@ const SupabaseSync = (() => {
     return updatedOrg;
   }
 
-  async function cleanTenantOperationalData() {
-    if (!isAvailable() || !tenantSchemaName()) {
-      throw new Error('Select an organization and connect to Supabase before cleaning operational data.');
-    }
-
-    const [branchesResult, glResult] = await Promise.all([
-      tenantTable('branches').select('id, tillBalances'),
-      tenantTable('general_ledger').select('code')
-    ]);
-    if (branchesResult.error) throw branchesResult.error;
-    if (glResult.error) throw glResult.error;
-
-    const deletes = await Promise.all([
-      tenantTable('audit_trail').delete().neq('id', '__keepall__'),
-      tenantTable('transactions').delete().neq('id', '__keepall__'),
-      tenantTable('members').delete().neq('id', '__keepall__')
-    ]);
-    const deleteError = deletes.find(result => result.error)?.error;
-    if (deleteError) throw deleteError;
-
-    const glReset = await tenantTable('general_ledger')
-      .update({ balance: 0 })
-      .not('code', 'is', null);
-    if (glReset.error) throw glReset.error;
-
-    for (const branch of branchesResult.data || []) {
-      const tillBalances = (branch.tillBalances || []).map(till => ({
-        ...till,
-        balance: 0,
-        status: 'Pending Open'
-      }));
-      const branchReset = await tenantTable('branches')
-        .update({
-          cashInVault: 0,
-          reconciliationDiscrepancy: 0,
-          tillBalances,
-          lastReconciledAt: new Date().toISOString()
-        })
-        .eq('id', branch.id);
-      if (branchReset.error) throw branchReset.error;
-    }
-
-    return {
-      members: 'cleared',
-      transactions: 'cleared',
-      auditTrail: 'cleared',
-      ledgerBalances: 'zeroed',
-      branchCash: 'zeroed'
-    };
-  }
-
   // --- Realtime Subscription ---
 
   function setupRealtime(storeInstance) {
@@ -607,7 +556,6 @@ const SupabaseSync = (() => {
     markDirty,
     forcePush,
     forcePull,
-    cleanTenantOperationalData,
     applyTenantSetup,
     pushAll,
     pullAll,

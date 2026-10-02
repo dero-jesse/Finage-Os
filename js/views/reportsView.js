@@ -8,6 +8,10 @@ const ReportsView = {
 
   open() {
     const state = (typeof store !== 'undefined' && store && store.state) ? store.state : ((typeof window !== 'undefined' && window.store && window.store.state) ? window.store.state : null);
+    if (typeof App !== 'undefined' && !App.canOpenReports(state || store.state)) {
+      App.showToast('You do not have permission to access reports.', 'danger');
+      return;
+    }
     const mount = document.getElementById('reports-modal-mount');
     const hasInitializedAppContext = !!(state && (
       state.isAuthenticated ||

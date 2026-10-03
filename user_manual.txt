@@ -10,10 +10,11 @@ Finage OS can run with demo/local data or with an organization connected to Supa
 1. SIGN IN AND SELECT AN ORGANIZATION
 -------------------------------------
 1. Open Finage OS in the web browser provided by your administrator.
-2. Sign in with your assigned account. Do not share your password or account.
-3. If you are asked to select an organization, choose the organization you are authorized to work in.
-4. Check the organization name in the application header before posting, importing, exporting, or changing setup.
-5. If no organization is available, or the wrong organization is shown, contact your platform administrator. Do not enter records under another organization's workspace.
+2. For a new account, select Use an email code, enter your work email, and verify the one-time code sent to that inbox. Set a personal password when prompted. For an existing account, sign in with your password.
+3. Do not share your password, email code, or account.
+4. If you are asked to select an organization, choose the organization you are authorized to work in.
+5. Check the organization name in the application header before posting, importing, exporting, or changing setup.
+6. If no organization is available, or the wrong organization is shown, contact your platform administrator. Do not enter records under another organization's workspace.
 
 2. NAVIGATION BASICS
 --------------------
@@ -134,7 +135,7 @@ Exports may contain confidential financial or member information. Store and shar
 Users with user-management permission can open Actions > Users or press Alt+U.
 - Operators lists users, assigned roles, branch assignments, approval limit, and status.
 - Permissions displays the task-permission matrix.
-- Add User is used to enter a new operator's name, official email, role(s), branch, and approval ceilings. In a connected environment, follow the password and invitation process shown on screen.
+- Add User is used to enter a new operator's name, official email, role(s), branch, and approval ceilings. In a connected environment, the new operator receives an email code and must set a personal password before accessing the organization.
 - Edit Roles is used to change an existing operator's role assignment.
 
 Assign only the access needed for a person's duties. Confirm roles, branch, status, and transaction limits with the organization administrator. User management should not be used to bypass maker-checker or approval controls.

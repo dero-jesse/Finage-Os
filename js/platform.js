@@ -145,6 +145,27 @@ const Platform = {
     return data;
   },
 
+  async createTenantUser(userData) {
+    if (!window.supabase) throw new Error('Supabase not available');
+    if (!this.context.currentOrgId) throw new Error('Select an organization before adding a user.');
+    const { data, error } = await window.supabase.functions.invoke('provision-organization', {
+      body: { ...userData, action: 'create-tenant-user', orgId: this.context.currentOrgId }
+    });
+    if (error) {
+      let detail = error.message || 'User setup request failed.';
+      if (error.context && typeof error.context.json === 'function') {
+        try {
+          const responseBody = await error.context.json();
+          detail = responseBody.error || responseBody.message || detail;
+        } catch (_) {}
+      }
+      throw new Error(detail);
+    }
+    if (!data?.success) throw new Error(data?.error || 'User setup did not complete.');
+    if (window.SupabaseSync) await window.SupabaseSync.init(window.store);
+    return data;
+  },
+
   getOrganizations() { return this.context.organizations; },
   getActiveOrg()     { return this.context.currentOrg; },
   isSuperuser()      { return this.context.isPlatformSuperuser; }

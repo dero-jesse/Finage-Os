@@ -12,6 +12,54 @@ const jsonResponse = (body: unknown, status = 200) =>
     headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
 
+async function sendSetupCode(mailClient: ReturnType<typeof createClient>, email: string) {
+  const { error } = await mailClient.auth.signInWithOtp({
+    email,
+    options: { shouldCreateUser: false },
+  });
+  return error
+    ? { status: "otp_failed", message: error.message }
+    : { status: "otp_sent", message: "Email setup code sent." };
+}
+
+async function createOrFindAuthUser(
+  adminClient: ReturnType<typeof createClient>,
+  mailClient: ReturnType<typeof createClient>,
+  email: string,
+  name: string,
+  orgId: string,
+  sendCode = true,
+) {
+  const metadata = { full_name: name, organization_id: orgId, password_change_required: true };
+  const { data: created, error: createError } = await adminClient.auth.admin.createUser({
+    email,
+    email_confirm: false,
+    user_metadata: metadata,
+  });
+  let authUser = created.user;
+
+  if (!authUser && createError?.message.toLowerCase().includes("already")) {
+    const { data: users, error: listError } = await adminClient.auth.admin.listUsers({ page: 1, perPage: 1000 });
+    if (listError) return { user: null, status: "account_lookup_failed", message: listError.message, created: false };
+    authUser = users.users.find((user) => user.email?.toLowerCase() === email) || null;
+  } else if (createError) {
+    return { user: null, status: "account_create_failed", message: createError.message, created: false };
+  }
+
+  if (!authUser) return { user: null, status: "account_create_failed", message: "Auth user was not returned.", created: false };
+  const wasCreated = !!created.user;
+  if (authUser.email_confirmed_at) {
+    return { user: authUser, status: "existing_account_linked", message: "Existing confirmed account linked; no setup code was sent.", created: wasCreated };
+  }
+
+  const { error: metadataError } = await adminClient.auth.admin.updateUserById(authUser.id, {
+    user_metadata: { ...authUser.user_metadata, ...metadata },
+  });
+  if (metadataError) return { user: authUser, status: "otp_failed", message: metadataError.message, created: wasCreated };
+  if (!sendCode) return { user: authUser, status: "otp_pending", message: "Email setup code pending.", created: wasCreated };
+  return { user: authUser, ...await sendSetupCode(mailClient, email), created: wasCreated };
+}
+
 Deno.serve(async (request) => {
   if (request.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (request.method !== "POST") return jsonResponse({ error: "Method not allowed." }, 405);
@@ -35,6 +83,9 @@ Deno.serve(async (request) => {
   const adminClient = createClient(supabaseUrl, serviceRoleKey, {
     auth: { autoRefreshToken: false, persistSession: false },
   });
+  const mailClient = createClient(supabaseUrl, anonKey, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
 
   const { data: authResult, error: authError } = await userClient.auth.getUser();
   const caller = authResult.user;
@@ -47,14 +98,151 @@ Deno.serve(async (request) => {
     .eq("is_active", true)
     .maybeSingle();
   if (platformError) return jsonResponse({ error: `Could not verify platform access: ${platformError.message}` }, 500);
-  if (!platformUser) return jsonResponse({ error: "Platform superuser access required." }, 403);
 
-  let body: { action?: string; orgId?: string; email?: string; organization?: Record<string, unknown> };
+  let body: {
+    action?: string;
+    orgId?: string;
+    email?: string;
+    name?: string;
+    roles?: string[];
+    branchId?: string;
+    branchName?: string;
+    singleApprovalLimit?: number;
+    dailyApprovalLimit?: number;
+    organization?: Record<string, unknown>;
+  };
   try {
     body = await request.json();
   } catch {
     return jsonResponse({ error: "Request body must be valid JSON." }, 400);
   }
+
+  if (body.action === "create-tenant-user") {
+    const orgId = String(body.orgId || "");
+    const name = String(body.name || "").trim();
+    const email = String(body.email || "").trim().toLowerCase();
+    const roleIds = Array.isArray(body.roles) ? [...new Set(body.roles.map(String))] : [];
+    const branchId = String(body.branchId || "");
+    const branchName = String(body.branchName || "");
+    const singleApprovalLimit = Number(body.singleApprovalLimit) || 0;
+    const dailyApprovalLimit = Number(body.dailyApprovalLimit) || 0;
+    if (!/^[a-z0-9_]{1,50}$/.test(orgId) || !name || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || !branchId || !roleIds.length) {
+      return jsonResponse({ error: "Organization, name, email, branch, and at least one role are required." }, 400);
+    }
+    if (singleApprovalLimit < 0 || dailyApprovalLimit < 0) return jsonResponse({ error: "Approval limits cannot be negative." }, 400);
+
+    const { data: organization, error: orgError } = await adminClient
+      .from("organizations")
+      .select("id, schema_name, status")
+      .eq("id", orgId)
+      .eq("status", "active")
+      .maybeSingle();
+    if (orgError) return jsonResponse({ error: `Could not load organization: ${orgError.message}` }, 500);
+    if (!organization?.schema_name) return jsonResponse({ error: "Active organization not found." }, 404);
+
+    let auditUserId = caller.id;
+    let auditUserName = caller.email || "Platform superuser";
+    if (!platformUser) {
+      const { data: actor, error: actorError } = await adminClient
+        .schema(organization.schema_name)
+        .from("users")
+        .select("id, name, roles, status")
+        .eq("auth_uid", caller.id)
+        .maybeSingle();
+      if (actorError) return jsonResponse({ error: `Could not verify organization permissions: ${actorError.message}` }, 500);
+      if (!actor || actor.status !== "Active") return jsonResponse({ error: "Active organization user required." }, 403);
+      auditUserId = actor.id;
+      auditUserName = actor.name;
+
+      const actorRoleIds = Array.isArray(actor.roles) ? actor.roles.map(String) : [];
+      const { data: actorRoles, error: actorRolesError } = await adminClient
+        .schema(organization.schema_name)
+        .from("roles")
+        .select("permissions")
+        .in("id", actorRoleIds);
+      if (actorRolesError) return jsonResponse({ error: `Could not verify user-management permission: ${actorRolesError.message}` }, 500);
+      const permissions = (actorRoles || []).flatMap((role) => Array.isArray(role.permissions) ? role.permissions : []);
+      if (!permissions.includes("MANAGE_USERS") && !permissions.includes("READ_ALL_MODULES")) {
+        return jsonResponse({ error: "Manage-users permission required." }, 403);
+      }
+    }
+
+    const { data: roles, error: rolesError } = await adminClient
+      .schema(organization.schema_name)
+      .from("roles")
+      .select("id")
+      .in("id", roleIds);
+    if (rolesError) return jsonResponse({ error: `Could not validate assigned roles: ${rolesError.message}` }, 500);
+    if ((roles || []).length !== roleIds.length) return jsonResponse({ error: "One or more assigned roles do not exist in this organization." }, 400);
+    const { data: branch, error: branchError } = await adminClient
+      .schema(organization.schema_name)
+      .from("branches")
+      .select("id, name")
+      .eq("id", branchId)
+      .maybeSingle();
+    if (branchError) return jsonResponse({ error: `Could not validate branch: ${branchError.message}` }, 500);
+    if (!branch) return jsonResponse({ error: "Selected branch does not exist in this organization." }, 400);
+
+    const { data: duplicate, error: duplicateError } = await adminClient
+      .schema(organization.schema_name)
+      .from("users")
+      .select("id")
+      .ilike("email", email)
+      .maybeSingle();
+    if (duplicateError) return jsonResponse({ error: `Could not check existing organization user: ${duplicateError.message}` }, 500);
+    if (duplicate) return jsonResponse({ error: "An organization user with this email already exists." }, 409);
+
+    const setup = await createOrFindAuthUser(adminClient, mailClient, email, name, orgId, false);
+    if (!setup.user) return jsonResponse({ error: `Auth account setup failed: ${setup.message}` }, 502);
+    const newUserId = `USR-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
+    const { error: insertError } = await adminClient
+      .schema(organization.schema_name)
+      .from("users")
+      .insert([{
+        id: newUserId,
+        name,
+        email,
+        roles: roleIds,
+        branchId,
+        branchName: branch.name || branchName,
+        singleApprovalLimit,
+        dailyApprovalLimit,
+        status: "Active",
+        mfaEnabled: true,
+        lastLogin: new Date().toISOString(),
+        auth_uid: setup.user.id,
+      }]);
+    if (insertError) {
+      if (setup.created) await adminClient.auth.admin.deleteUser(setup.user.id);
+      return jsonResponse({ error: `Could not add the organization user: ${insertError.message}` }, 409);
+    }
+
+    const { error: auditError } = await adminClient
+      .schema(organization.schema_name)
+      .from("audit_trail")
+      .insert([{
+        id: `AUD-${crypto.randomUUID().slice(0, 8).toUpperCase()}`,
+        timestamp: new Date().toISOString(),
+        userId: auditUserId,
+        userName: auditUserName,
+        action: "NEW_SYSTEM_USER_CREATED",
+        module: "User Administration (RBAC)",
+        entityId: newUserId,
+        description: `Created user ${name} with ${roleIds.length} role(s).`,
+      }]);
+    if (auditError) console.warn("Could not record tenant user creation audit event:", auditError.message);
+
+    let status = setup.status;
+    let message = setup.message;
+    if (setup.status === "otp_pending") {
+      const setupCode = await sendSetupCode(mailClient, email);
+      status = setupCode.status;
+      message = setupCode.message;
+    }
+    return jsonResponse({ success: true, userId: newUserId, status, message });
+  }
+
+  if (!platformUser) return jsonResponse({ error: "Platform superuser access required." }, 403);
 
   if (body.action === "correct-owner-email") {
     const orgId = String(body.orgId || "");
@@ -72,61 +260,34 @@ Deno.serve(async (request) => {
     if (orgError) return jsonResponse({ error: `Could not load organization: ${orgError.message}` }, 500);
     if (!organization) return jsonResponse({ error: "Active organization not found." }, 404);
 
-    let authUser: { id: string } | null = null;
-    let correctedExistingOwner = false;
-    const { data: inviteData, error: inviteError } = await adminClient.auth.admin.inviteUserByEmail(newEmail, {
-      data: { full_name: `${organization.name} Administrator`, organization_id: orgId },
-    });
-    if (!inviteError && inviteData.user) {
-      authUser = { id: inviteData.user.id };
-    } else if (inviteError?.message.toLowerCase().includes("already") && inviteError.message.toLowerCase().includes("registered")) {
-      const { data: users, error: listError } = await adminClient.auth.admin.listUsers({ page: 1, perPage: 1000 });
-      if (listError) return jsonResponse({ error: `Could not resolve existing Auth account: ${listError.message}` }, 500);
-      const existing = users.users.find((user) => user.email?.toLowerCase() === newEmail);
-      if (existing) authUser = { id: existing.id };
-    } else if (inviteError?.message.toLowerCase().includes("rate limit")) {
-      const { data: users, error: listError } = await adminClient.auth.admin.listUsers({ page: 1, perPage: 1000 });
-      if (listError) return jsonResponse({ error: `Invitation was rate-limited and the current owner account could not be checked: ${listError.message}` }, 429);
-      const existingOwner = users.users.find((user) => user.email?.toLowerCase() === organization.superuser_email?.toLowerCase());
-      if (!existingOwner || existingOwner.email_confirmed_at) {
-        return jsonResponse({ error: `Invitation email rate limit exceeded. The existing owner Auth account is missing or already confirmed, so its email was not changed. Retry after the email rate limit resets.` }, 429);
-      }
-
-      const { data: updatedAuth, error: authUpdateError } = await adminClient.auth.admin.updateUserById(existingOwner.id, {
-        email: newEmail,
-        email_confirm: true,
-        user_metadata: { ...existingOwner.user_metadata, full_name: `${organization.name} Administrator`, organization_id: orgId },
-      });
-      if (authUpdateError || !updatedAuth.user) {
-        return jsonResponse({ error: `Invitation was rate-limited and the unconfirmed Auth account could not be corrected: ${authUpdateError?.message || "Auth user was not returned."}` }, 502);
-      }
-      authUser = { id: updatedAuth.user.id };
-      correctedExistingOwner = true;
-      inviteError.message = "Email delivery was rate-limited. The existing unconfirmed owner account was corrected; use password reset after the email limit clears to set access.";
-    }
-    if (!authUser) return jsonResponse({ error: `Owner invitation failed: ${inviteError?.message || "Auth user was not returned."}` }, 502);
+    const setup = await createOrFindAuthUser(
+      adminClient,
+      mailClient,
+      newEmail,
+      `${organization.name} Administrator`,
+      orgId,
+      false,
+    );
+    if (!setup.user) return jsonResponse({ error: `Owner account setup failed: ${setup.message}` }, 502);
 
     const { data: updated, error: updateError } = await adminClient.rpc("update_org_owner_email", {
       p_org_id: orgId,
       p_expected_email: organization.superuser_email,
       p_new_email: newEmail,
-      p_auth_uid: authUser.id,
+      p_auth_uid: setup.user.id,
     });
     if (updateError || updated !== true) {
-      return jsonResponse({ error: `Owner account was invited/resolved, but the tenant record was not updated: ${updateError?.message || "RPC returned false."}` }, 409);
+      return jsonResponse({ error: `Owner account was prepared, but the tenant record was not updated: ${updateError?.message || "RPC returned false."}` }, 409);
     }
+    if (setup.status === "otp_pending") Object.assign(setup, await sendSetupCode(mailClient, newEmail));
 
     return jsonResponse({
       success: true,
       orgId,
       schemaName: organization.schema_name,
       ownerEmail: newEmail,
-      invitationStatus: correctedExistingOwner
-        ? "email_corrected_invitation_rate_limited"
-        : inviteError ? "existing_account_linked" : "invited",
-      message: correctedExistingOwner
-        ? inviteError.message
-        : inviteError ? "Existing Auth account linked; no new invitation was sent." : "Owner invitation sent.",
+      invitationStatus: setup.status,
+      message: setup.message,
     });
   }
 
@@ -155,22 +316,24 @@ Deno.serve(async (request) => {
       return jsonResponse({ error: "The active owner record is not linked to an Auth account. Correct/link the owner email first." }, 409);
     }
 
-    const randomBytes = crypto.getRandomValues(new Uint8Array(24));
-    const temporaryPassword = `Fn!${Array.from(randomBytes, (byte) => byte.toString(16).padStart(2, "0")).join("")}a7`;
-    const { data: authUser, error: passwordError } = await adminClient.auth.admin.updateUserById(owner.auth_uid, {
-      password: temporaryPassword,
-      user_metadata: { password_change_required: true, organization_id: orgId },
+    const { data: authResult, error: authError } = await adminClient.auth.admin.getUserById(owner.auth_uid);
+    if (authError || !authResult.user) return jsonResponse({ error: `Could not load the owner Auth account: ${authError?.message || "Auth user not returned."}` }, 502);
+    const { error: metadataError } = await adminClient.auth.admin.updateUserById(owner.auth_uid, {
+      user_metadata: {
+        ...authResult.user.user_metadata,
+        organization_id: orgId,
+        password_change_required: true,
+      },
     });
-    if (passwordError || !authUser.user) {
-      return jsonResponse({ error: `Could not set the one-time owner password: ${passwordError?.message || "Auth user not returned."}` }, 502);
-    }
+    if (metadataError) return jsonResponse({ error: `Could not mark owner for password setup: ${metadataError.message}` }, 502);
+    const setupCode = await sendSetupCode(mailClient, owner.email);
+    if (setupCode.status !== "otp_sent") return jsonResponse({ error: `Could not send owner setup code: ${setupCode.message}` }, 502);
 
     return jsonResponse({
       success: true,
       orgId,
       ownerEmail: owner.email,
-      temporaryPassword,
-      message: "One-time password created. It must be changed immediately after the owner signs in.",
+      message: "Email setup code sent. The owner must set a personal password after verification.",
     });
   }
 
@@ -207,37 +370,21 @@ Deno.serve(async (request) => {
   const schemaName = String(provisioned?.schema_name || "");
   const invitations: Array<{ email: string; status: string; message?: string }> = [];
   for (const target of inviteTargets) {
-    let authUser: { id: string } | null = null;
-    const { data: inviteData, error: inviteError } = await adminClient.auth.admin.inviteUserByEmail(
-      target.email,
-      {
-        data: { full_name: target.name, organization_id: orgId },
-      },
-    );
-
-    if (!inviteError && inviteData.user) {
-      authUser = { id: inviteData.user.id };
-    } else if (inviteError?.message.toLowerCase().includes("already") && inviteError.message.toLowerCase().includes("registered")) {
-      const { data: users, error: listError } = await adminClient.auth.admin.listUsers({ page: 1, perPage: 1000 });
-      if (!listError) {
-        const existing = users.users.find((user) => user.email?.toLowerCase() === target.email);
-        if (existing) authUser = { id: existing.id };
-      }
-    }
-
-    if (authUser) {
+    const setup = await createOrFindAuthUser(adminClient, mailClient, target.email, target.name, orgId, false);
+    if (setup.user) {
       const { data: linked, error: linkError } = await adminClient.rpc("link_org_user_auth", {
         p_org_id: orgId,
         p_email: target.email,
-        p_auth_uid: authUser.id,
+        p_auth_uid: setup.user.id,
       });
       if (linkError || linked !== true) {
         invitations.push({ email: target.email, status: "link_failed", message: linkError?.message || "Tenant user row was not linked." });
       } else {
-        invitations.push({ email: target.email, status: inviteError ? "existing_account_linked" : "invited", ...(inviteError ? { message: "Existing Auth account linked; no new invite was sent." } : {}) });
+        if (setup.status === "otp_pending") Object.assign(setup, await sendSetupCode(mailClient, target.email));
+        invitations.push({ email: target.email, status: setup.status, ...(setup.message ? { message: setup.message } : {}) });
       }
     } else {
-      invitations.push({ email: target.email, status: "invite_failed", message: inviteError?.message || "Could not resolve Auth user." });
+      invitations.push({ email: target.email, status: setup.status, message: setup.message || "Could not resolve Auth user." });
     }
   }
 

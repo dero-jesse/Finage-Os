@@ -86,6 +86,109 @@ const UserManagementEngine = {
     return { success: false, error: 'Invalid credentials or inactive account.' };
   },
 
+  async requestEmailCode(email) {
+    if (!window.supabase) return { success: false, error: 'Supabase is not available.' };
+    const { error } = await window.supabase.auth.signInWithOtp({
+      email: email.trim().toLowerCase(),
+      options: { shouldCreateUser: false }
+    });
+    return error ? { success: false, error: error.message } : { success: true };
+  },
+
+  async verifyEmailCode(state, email, token) {
+    if (!window.supabase) return { success: false, error: 'Supabase is not available.' };
+    const { data, error } = await window.supabase.auth.verifyOtp({
+      email: email.trim().toLowerCase(),
+      token: token.trim(),
+      type: 'email'
+    });
+    if (error) return { success: false, error: error.message };
+    const user = data.user || data.session?.user;
+    if (!user) return { success: false, error: 'Email code verified without an Auth user.' };
+    const { data: updated, error: metadataError } = await window.supabase.auth.updateUser({
+      data: { ...user.user_metadata, password_change_required: true }
+    });
+    if (metadataError) return { success: false, error: metadataError.message };
+    return this._activateAuthUser(state, updated.user || user);
+  },
+
+  async completePasswordSetup(state, password) {
+    if (!window.supabase) return { success: false, error: 'Supabase is not available.' };
+    const { data: current, error: currentError } = await window.supabase.auth.getUser();
+    if (currentError || !current.user) return { success: false, error: 'Your setup session expired. Request a new email code.' };
+
+    const { error } = await window.supabase.auth.updateUser({
+      password,
+      data: { ...current.user.user_metadata, password_change_required: false }
+    });
+    if (error) return { success: false, error: error.message };
+
+    if (window.Platform) await window.Platform.init();
+    if (window.SupabaseSync && window.Platform?.context?.currentOrgSchema) {
+      await window.SupabaseSync.init(window.store);
+    }
+
+    const email = current.user.email?.toLowerCase();
+    const systemUser = email && state.users.find(user => user.email.toLowerCase() === email && user.status === 'Active');
+    if (!systemUser) {
+      await window.supabase.auth.signOut();
+      state.isAuthenticated = false;
+      state.currentUserId = null;
+      state.passwordChangeRequired = false;
+      state.passwordChangeEmail = null;
+      return { success: false, error: 'Password was set, but no active organization user is linked to this email. Ask your organization administrator to resend access.' };
+    }
+
+    this._applyLogin(state, systemUser);
+    state.hasPassedLanding = true;
+    state.passwordChangeRequired = false;
+    state.passwordChangeEmail = null;
+    return { success: true };
+  },
+
+  async _activateAuthUser(state, authUser) {
+    if (window.Platform) await window.Platform.init();
+    if (window.Platform?.isSuperuser()) {
+      const platformUser = window.Platform.context.platformUser;
+      const systemUser = state.users.find(user => user.id === 'USR-000') || {
+        id: 'USR-000',
+        name: platformUser.name,
+        email: platformUser.email,
+        roles: ['ROLE-ADMIN'],
+        branchId: null,
+        branchName: 'Platform',
+        singleApprovalLimit: 0,
+        dailyApprovalLimit: 0,
+        status: 'Active',
+        mfaEnabled: true
+      };
+      if (!state.users.some(user => user.id === systemUser.id)) state.users.push(systemUser);
+      this._applyLogin(state, systemUser);
+      state.orgSelectorShown = true;
+    } else {
+      if (window.SupabaseSync && window.Platform?.context?.currentOrgSchema) {
+        await window.SupabaseSync.init(window.store);
+      }
+      const email = authUser.email?.toLowerCase();
+      const systemUser = email && state.users.find(user => user.email.toLowerCase() === email && user.status === 'Active');
+      if (!systemUser) {
+        await window.supabase.auth.signOut();
+        return { success: false, error: 'Email verified, but no active organization user is linked to this address.' };
+      }
+      if (authUser.user_metadata?.password_change_required === true) {
+        state.passwordChangeRequired = true;
+        state.passwordChangeEmail = authUser.email || null;
+        state.isAuthenticated = true;
+        state.hasPassedLanding = true;
+        return { success: true, passwordChangeRequired: true };
+      }
+      this._applyLogin(state, systemUser);
+    }
+
+    state.hasPassedLanding = true;
+    return { success: true };
+  },
+
   /**
    * Legacy sync login — kept for quick-login buttons in dev.
    * In production the async loginWithAuth() is used.
@@ -145,10 +248,15 @@ const UserManagementEngine = {
     try {
       const { data: { session } } = await window.supabase.auth.getSession();
       if (session && session.user) {
-        if (session.user.user_metadata?.password_change_required === true) {
+        const callbackType = window.FINAGE_AUTH_CALLBACK_TYPE;
+        const recoveryCallback = callbackType === 'recovery' || callbackType === 'invite';
+        if (recoveryCallback || session.user.user_metadata?.password_change_required === true) {
           state.passwordChangeRequired = true;
           state.passwordChangeEmail = session.user.email || null;
           state.isAuthenticated = true;
+          state.hasPassedLanding = true;
+          window.FINAGE_AUTH_CALLBACK_TYPE = null;
+          window.history.replaceState(null, document.title, `${window.location.pathname}${window.location.search}`);
           return true;
         }
         const email = session.user.email;

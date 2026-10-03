@@ -160,13 +160,13 @@ const App = {
         this.tickerBar.style.display = shouldShowHeader ? 'flex' : 'none';
       }
 
-      if (!state.hasPassedLanding) {
-        LandingView.render(this.viewport, state);
+      if (state.passwordChangeRequired) {
+        LoginView.renderPasswordChange(this.viewport, state);
         return;
       }
 
-      if (state.passwordChangeRequired) {
-        LoginView.renderPasswordChange(this.viewport, state);
+      if (!state.hasPassedLanding) {
+        LandingView.render(this.viewport, state);
         return;
       }
 

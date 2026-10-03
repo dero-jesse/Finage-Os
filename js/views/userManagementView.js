@@ -245,17 +245,7 @@ const UserManagementView = {
           </div>
         </div>
 
-        <!-- Password row (used to create Supabase Auth account) -->
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
-          <div class="form-group" style="margin: 0;">
-            <label class="form-label">Initial Login Password ${window.supabase ? '<span class="badge badge-emerald" style="font-size:0.6rem;">Supabase Auth</span>' : '<span class="badge badge-amber" style="font-size:0.6rem;">Offline — not stored</span>'}</label>
-            <input type="password" id="inp-u-password" class="form-control" placeholder="Min 8 characters" autocomplete="new-password" ${window.supabase ? 'required' : ''}>
-          </div>
-          <div class="form-group" style="margin: 0;">
-            <label class="form-label">Confirm Password</label>
-            <input type="password" id="inp-u-password-confirm" class="form-control" placeholder="Re-enter password" autocomplete="new-password">
-          </div>
-        </div>
+        <p style="margin:0;color:var(--text-dim);font-size:.78rem;">${window.supabase ? 'The new operator receives a one-time email code and must set a personal password before entering the organization.' : 'Offline user access is stored locally and cannot receive an email setup code.'}</p>
 
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
           <div class="form-group" style="margin: 0;">
@@ -338,8 +328,6 @@ const UserManagementView = {
         e.preventDefault();
         const name = container.querySelector('#inp-u-name')?.value.trim();
         const email = container.querySelector('#inp-u-email')?.value.trim();
-        const password = container.querySelector('#inp-u-password')?.value || '';
-        const passwordConfirm = container.querySelector('#inp-u-password-confirm')?.value || '';
         const roleSelect = container.querySelector('#inp-u-role');
         const roles = Array.from(roleSelect.selectedOptions).map(opt => opt.value);
         const branchParts = container.querySelector('#inp-u-branch')?.value.split('|');
@@ -352,38 +340,41 @@ const UserManagementView = {
         const clearErr = () => { if (errEl) errEl.style.display = 'none'; };
         clearErr();
 
-        // Validate passwords when Supabase is live
-        if (window.supabase) {
-          if (password.length < 8) { showErr('Password must be at least 8 characters.'); return; }
-          if (password !== passwordConfirm) { showErr('Passwords do not match.'); return; }
-        }
-
         if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Creating…'; }
-
-        // Step 1: Create Supabase Auth account (if live)
-        if (window.supabase && password) {
-          const authResult = await UserManagementEngine.createAuthUser(email, password);
-          if (!authResult.success) {
-            showErr('Auth account creation failed: ' + authResult.error);
-            if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Create System User Account'; }
-            return;
+        try {
+          let newId;
+          let setupMessage = '';
+          if (window.supabase) {
+            const result = await Platform.createTenantUser({
+              name,
+              email,
+              roles,
+              branchId: branchParts[0],
+              branchName: branchParts[1],
+              singleApprovalLimit: singleLimit,
+              dailyApprovalLimit: dailyLimit
+            });
+            newId = result.userId;
+            setupMessage = result.message;
+          } else {
+            newId = store.addUser({
+              name,
+              email,
+              roles,
+              branchId: branchParts[0],
+              branchName: branchParts[1],
+              singleApprovalLimit: singleLimit,
+              dailyApprovalLimit: dailyLimit
+            });
           }
-        }
 
-        // Step 2: Add to the system user directory
-        const newId = store.addUser({
-          name,
-          email,
-          roles: roles,
-          branchId: branchParts[0],
-          branchName: branchParts[1],
-          singleApprovalLimit: singleLimit,
-          dailyApprovalLimit: dailyLimit
-        });
-        
-        App.showToast(`Operator ${name} created (${newId}) with ${roles.length} role(s).${window.supabase ? ' Auth account sent confirmation email.' : ''}`, 'success');
-        modal.classList.remove('active');
-        if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Create System User Account'; }
+          App.showToast(`Operator ${name} created (${newId}).${setupMessage ? ` ${setupMessage}` : ''}`, 'success');
+          modal.classList.remove('active');
+        } catch (error) {
+          showErr(error.message || 'Could not create the operator.');
+        } finally {
+          if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Create System User Account'; }
+        }
       });
     }
 

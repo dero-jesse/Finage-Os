@@ -359,7 +359,7 @@ const SetupWizardView = {
 
     return `
       <div style="margin-bottom:.75rem;display:flex;align-items:center;justify-content:space-between;">
-        <p style="margin:0;font-size:.82rem;color:#475569;">The organisation owner and each staff member will receive a Supabase Auth invitation to set a password.</p>
+        <p style="margin:0;font-size:.82rem;color:#475569;">The organisation owner and each staff member will receive a one-time email code, then set a personal password.</p>
         <button id="btn-add-user" style="padding:.4rem 1rem;border-radius:8px;border:2px solid #10b981;background:#f0fdf4;color:#059669;font-weight:700;font-size:.75rem;cursor:pointer;">+ Add Staff User</button>
       </div>
       ${this._data.staffUsers.length === 0 ? `
@@ -438,8 +438,8 @@ const SetupWizardView = {
           <div style="background:#f0fdf4;border:1px solid #a7f3d0;border-radius:12px;padding:1rem;font-size:.82rem;color:#065f46;">
             <b>Organisation provisioned successfully.</b> PostgreSQL created and seeded <code>${escapeHtml(this._provisionedSchema)}</code> directly.
             ${this._invitationResults.map(invitation => {
-              const statusLabel = invitation.status === 'invited' ? 'Invitation sent' : invitation.status === 'existing_account_linked' ? 'Existing account linked' : 'Invitation needs attention';
-              const color = invitation.status === 'invited' || invitation.status === 'existing_account_linked' ? '#065f46' : '#b91c1c';
+              const statusLabel = invitation.status === 'otp_sent' ? 'Email code sent' : invitation.status === 'existing_account_linked' ? 'Existing account linked' : 'Setup needs attention';
+              const color = invitation.status === 'otp_sent' || invitation.status === 'existing_account_linked' ? '#065f46' : '#b91c1c';
               return `<div style="margin-top:.4rem;color:${color};">${statusLabel}: ${escapeHtml(invitation.email)}${invitation.message ? ` (${escapeHtml(invitation.message)})` : ''}</div>`;
             }).join('')}
           </div>
@@ -448,7 +448,7 @@ const SetupWizardView = {
             <b>⚠️ Ready to provision.</b> Clicking "Provision Organisation" will:<br>
             • Create a dedicated PostgreSQL schema directly in Supabase<br>
             • Seed the owner, roles, branches, chart of accounts, and staff in one database transaction<br>
-            • Send password-setup invitations to the owner and staff<br>
+            • Email setup codes to the owner and staff; require a personal password after verification<br>
             • Activate this organisation for login
           </div>
         `}

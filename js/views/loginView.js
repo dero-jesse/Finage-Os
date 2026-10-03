@@ -47,19 +47,10 @@ const LoginView = {
       saveButton.textContent = 'Updating…';
       error.style.display = 'none';
       try {
-        const { error: updateError } = await window.supabase.auth.updateUser({
-          password: newPassword,
-          data: { password_change_required: false }
-        });
-        if (updateError) throw updateError;
-        await window.supabase.auth.signOut();
-        state.passwordChangeRequired = false;
-        state.passwordChangeEmail = null;
-        state.isAuthenticated = false;
-        state.currentUserId = null;
-        state.currentRole = null;
-        if (window.App) App.showToast('Password updated. Sign in with your new password.', 'success');
-        store.save();
+        const result = await UserManagementEngine.completePasswordSetup(state, newPassword);
+        if (!result.success) throw new Error(result.error);
+        store.saveLocal();
+        if (window.App) App.showToast('Password set. Your organization workspace is ready.', 'success');
       } catch (changeError) {
         error.textContent = changeError.message || 'Password update failed.';
         error.style.display = 'block';
@@ -104,6 +95,19 @@ const LoginView = {
             </button>
           </form>
 
+          <button id="btn-show-email-code" class="btn btn-secondary" type="button" style="justify-content:center;">Use an email code</button>
+          <form id="email-code-form" style="display:none;flex-direction:column;gap:.75rem;text-align:left;">
+            <label class="form-label" for="otp-email">Work email</label>
+            <input id="otp-email" class="form-control" type="email" autocomplete="email" required>
+            <div id="otp-code-group" style="display:none;flex-direction:column;gap:.5rem;">
+              <label class="form-label" for="otp-code">Email code</label>
+              <input id="otp-code" class="form-control" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="8">
+            </div>
+            <button id="btn-email-code-submit" class="btn btn-primary" type="submit" style="justify-content:center;">Send email code</button>
+            <button id="btn-email-code-resend" class="btn btn-secondary" type="button" style="display:none;justify-content:center;">Resend code</button>
+            <button id="btn-use-password" class="btn btn-secondary" type="button" style="justify-content:center;">Use password instead</button>
+          </form>
+
           <!-- Auth mode indicator -->
           <div style="text-align: center; font-size: 0.68rem; color: var(--text-dim); letter-spacing: 0.04em; margin-top: -0.4rem;">
             ${window.supabase ? 
@@ -146,6 +150,70 @@ const LoginView = {
 
   bindEvents(container, state) {
     const form = container.querySelector('#login-form');
+    const otpForm = container.querySelector('#email-code-form');
+    const otpSubmit = container.querySelector('#btn-email-code-submit');
+    const otpEmail = container.querySelector('#otp-email');
+    const otpCode = container.querySelector('#otp-code');
+    const otpCodeGroup = container.querySelector('#otp-code-group');
+    const otpResend = container.querySelector('#btn-email-code-resend');
+    const switchToCode = container.querySelector('#btn-show-email-code');
+    const switchToPassword = container.querySelector('#btn-use-password');
+
+    switchToCode?.addEventListener('click', () => {
+      form.style.display = 'none';
+      switchToCode.style.display = 'none';
+      otpForm.style.display = 'flex';
+      this._clearError(container);
+    });
+
+    switchToPassword?.addEventListener('click', () => {
+      otpForm.style.display = 'none';
+      form.style.display = 'flex';
+      switchToCode.style.display = 'flex';
+      this._clearError(container);
+    });
+
+    const sendCode = async () => {
+      otpSubmit.disabled = true;
+      this._clearError(container);
+      try {
+        const result = await UserManagementEngine.requestEmailCode(otpEmail.value);
+        if (!result.success) throw new Error(result.error);
+        otpEmail.readOnly = true;
+        otpCode.required = true;
+        otpCodeGroup.style.display = 'flex';
+        otpResend.style.display = 'flex';
+        otpSubmit.textContent = 'Verify code';
+        otpCode.focus();
+      } catch (error) {
+        this._showError(container, error.message || 'Could not send an email code.');
+      } finally {
+        otpSubmit.disabled = false;
+      }
+    };
+
+    otpForm?.addEventListener('submit', async event => {
+      event.preventDefault();
+      if (otpCodeGroup.style.display === 'none') {
+        await sendCode();
+        return;
+      }
+
+      otpSubmit.disabled = true;
+      this._clearError(container);
+      try {
+        const result = await UserManagementEngine.verifyEmailCode(state, otpEmail.value, otpCode.value);
+        if (!result.success) throw new Error(result.error);
+        store.saveLocal();
+      } catch (error) {
+        this._showError(container, error.message || 'Email code verification failed.');
+      } finally {
+        otpSubmit.disabled = false;
+      }
+    });
+
+    otpResend?.addEventListener('click', sendCode);
+
     if (form) {
       form.addEventListener('submit', async (e) => {
         e.preventDefault();

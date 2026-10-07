@@ -26,74 +26,28 @@ const WorkflowEngine = {
   /**
    * Executes Maker-Checker action on a task
    */
-  processTask(taskId, action, userRole, notes = '') {
-    if (action === 'Approve') {
-      return store.approveWorkflowTask(taskId, userRole);
-    } else {
-      const task = store.state.workflowTasks.find(t => t.id === taskId);
-      if (!task) return false;
-
-      task.makerCheckerStatus = 'Rejected / Returned to Maker';
-      task.history.push({
-        step: 'Checker Rejection',
-        user: `${userRole.toUpperCase()} Lead`,
-        action: `Rejected: ${notes}`,
-        timestamp: new Date().toISOString()
-      });
-
-      if (task.type === 'Loan Application Review') {
-        store.updateDisbursementStatus(task.entityId, 'Rejected');
-      }
-
-      store.state.auditTrail.unshift({
-        id: `AUD-${Date.now().toString().slice(-4)}`,
-        timestamp: new Date().toISOString(),
-        userId: `usr_${userRole}`,
-        userName: `${userRole} Checker`,
-        action: 'WORKFLOW_TASK_REJECTED',
-        module: 'Workflow Engine (Layer 1)',
-        entityId: taskId,
-        description: `Task ${taskId} rejected by ${userRole}. Reason: ${notes || 'Policy Exception'}`,
-        ipAddress: '192.168.1.50',
-        glImpact: 'None'
-      });
-
-      store.save();
-      return true;
+  async processTask(taskId, action, userRole, notes = '', options = {}) {
+    const task = store.state.workflowTasks.find(item => item.id === taskId);
+    if (!task || task.type !== 'Loan Application Review') {
+      return { success: false, error: 'This workflow type is not enabled for online approval.' };
+    }
+    try {
+      const outcome = await window.Platform.executeDomainAction('review_loan_application', {
+        applicationId: task.entityId,
+        decision: action,
+        reason: notes
+      }, options);
+      return { success: true, result: outcome.result, refreshError: outcome.refreshError };
+    } catch (error) {
+      return { success: false, error: error.message };
     }
   },
 
   /**
    * Initiates a new Maker workflow task
    */
-  createTask({ type, entityId, title, amount, requestedBy, makerUserId = null, approverRole, priority = 'Medium' }) {
-    const pacing = PacingEngine.getPacingAnalysis(store.state);
-    const liquidityCheck = amount <= pacing.safeHeadroomTarget ? 
-      `PASSED (Headroom ${Formatter.money(pacing.safeHeadroomTarget, true)} > ${Formatter.money(amount, true)})` : 
-      `PACING REQUIRED (Exceeds immediate buffer, requires staggered batching)`;
-
-    const newTask = {
-      id: `WF-${Date.now().toString().slice(-3)}`,
-      type,
-      entityId,
-      title,
-      amount,
-      requestedBy,
-      makerUserId,
-      currentStep: 'Maker Verification & Pacing Review',
-      approverRole,
-      makerCheckerStatus: 'Pending Checker Release',
-      liquidityImpactCheck: liquidityCheck,
-      priority,
-      createdAt: new Date().toISOString(),
-      history: [
-        { step: 'Maker Initiation', user: requestedBy, action: 'Initiated', timestamp: new Date().toISOString() }
-      ]
-    };
-
-    store.state.workflowTasks.unshift(newTask);
-    store.save();
-    return newTask.id;
+  async createTask() {
+    throw new Error('Only server-created loan application workflows are enabled in this build.');
   }
 };
 

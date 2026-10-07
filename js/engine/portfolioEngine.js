@@ -63,50 +63,13 @@ const PortfolioEngine = {
    * Dr 5030 Loan Loss Provision Expense / Cr 1250 Allowance for Loan Impairment (Loan Loss Reserve)
    * Risk metrics no longer sit disconnected from the actual books!
    */
-  postLoanLossProvision(state, { amount, notes, user }) {
+  async postLoanLossProvision(state, { amount, notes, user }, options = {}) {
     const parsedAmount = Number(amount);
-    if (isNaN(parsedAmount) || parsedAmount <= 0) {
-      return { success: false, error: 'Provision amount must be greater than zero.' };
-    }
-
-    const legs = [
-      { glCode: '5030', type: 'Debit', amount: parsedAmount },
-      { glCode: '1250', type: 'Credit', amount: parsedAmount }
-    ];
-
-    const postResult = CoreBankingEngine.executePosting(state, {
-      type: 'Loan Loss Provision',
-      description: notes || `Mandatory SASRA/CBK NPA loan loss impairment provision of ${Formatter.money(parsedAmount)}`,
-      legs,
-      channel: 'Credit Risk Engine (Layer 5)',
-      user
-    });
-
-    if (!postResult.success) {
-      return postResult;
-    }
-
-    // Update NPA summary required provisions to reflect newly posted reserves
-    if (state.npaSummary) {
-      state.npaSummary.totalRequiredProvisions = (state.generalLedger.find(g => g.code === '1250')?.balance || 0);
-      state.npaSummary.netLoanPortfolio = (state.generalLedger.find(g => g.code === '1200')?.balance || 0) - state.npaSummary.totalRequiredProvisions;
-    }
-
-    state.auditTrail.unshift({
-      id: `AUD-PRV-${Date.now().toString().slice(-4)}`,
-      timestamp: new Date().toISOString(),
-      userId: user?.id || 'risk_checker',
-      userName: user?.name || 'Head of Credit & Risk',
-      action: 'NPA_PROVISION_GL_POSTED',
-      module: 'Portfolio Quality (Layer 5)',
-      entityId: postResult.txId,
-      description: `Posted loan loss provision of ${Formatter.money(parsedAmount)} directly into GL: Dr 5030 Provision Expense / Cr 1250 Loan Loss Reserve.`,
-      ipAddress: '192.168.10.12',
-      glImpact: postResult.glImpact
-    });
-
-    store.save();
-    return postResult;
+    if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) throw new Error('Provision amount must be greater than zero.');
+    return window.Platform.executeDomainAction('post_portfolio_provision', {
+      amount: parsedAmount,
+      notes: notes || `Loan loss provision of ${Formatter.money(parsedAmount)}`
+    }, options);
   }
 };
 

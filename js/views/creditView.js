@@ -231,71 +231,115 @@ const CreditView = {
       InputModalView.open('loans');
     });
     container.querySelectorAll('.btn-application-approve').forEach(button => {
-      button.addEventListener('click', () => {
-        const result = WorkflowEngine.processTask(button.dataset.id, 'Approve', 'Credit');
-        if (result?.success) App.showToast('Loan application approved; it is now in the pacing queue.', 'success');
-        else App.showToast(result?.error || 'Application approval failed.', 'danger');
+      button.addEventListener('click', async () => {
+        button.disabled = true;
+        const result = await WorkflowEngine.processTask(button.dataset.id, 'Approve', 'Credit', '', {
+          idempotencyKey: button.dataset.idempotencyKey ||= crypto.randomUUID(), notify: false
+        });
+        if (result?.success) {
+          App.showToast(result.refreshError ? `Approval accepted; refresh failed: ${result.refreshError.message}` : 'Supabase approved the loan application.', result.refreshError ? 'warning' : 'success');
+          store.notify();
+        } else {
+          button.disabled = false;
+          App.showToast(result?.error || 'Application approval failed.', 'danger');
+        }
       });
     });
     container.querySelectorAll('.btn-application-reject').forEach(button => {
-      button.addEventListener('click', () => {
+      button.addEventListener('click', async () => {
         const reason = prompt('Enter a reason for returning or rejecting this application:');
         if (!reason?.trim()) return;
-        const result = WorkflowEngine.processTask(button.dataset.id, 'Reject', 'Credit', reason.trim());
-        if (result) App.showToast('Application returned to the maker / rejected.', 'info');
+        button.disabled = true;
+        const result = await WorkflowEngine.processTask(button.dataset.id, 'Reject', 'Credit', reason.trim(), {
+          idempotencyKey: button.dataset.idempotencyKey ||= crypto.randomUUID(), notify: false
+        });
+        if (result?.success) {
+          App.showToast(result.refreshError ? `Rejection accepted; refresh failed: ${result.refreshError.message}` : 'Supabase recorded the application rejection.', result.refreshError ? 'warning' : 'info');
+          store.notify();
+        } else {
+          button.disabled = false;
+          App.showToast(result?.error || 'Application rejection failed.', 'danger');
+        }
       });
     });
     container.querySelectorAll('.btn-disburse-loan').forEach(button => {
-      button.addEventListener('click', () => {
+      button.addEventListener('click', async () => {
         const app = state.disbursementQueue.find(item => item.id === button.dataset.id);
         if (!app || !confirm(`Confirm disbursement of ${Formatter.money(app.amount)} to ${app.clientName}?`)) return;
-        if (store.updateDisbursementStatus(app.id, 'Disbursed')) {
-          App.showToast(`Loan ${app.id} disbursed. A repayment schedule was created.`, 'success');
+        button.disabled = true;
+        try {
+          const result = await store.updateDisbursementStatus(app.id, 'Disbursed', null, {
+            idempotencyKey: button.dataset.idempotencyKey ||= crypto.randomUUID(), notify: false
+          });
+          App.showToast(result.refreshError ? `Supabase accepted disbursement ${result.result.id}; refresh failed: ${result.refreshError.message}` : `Supabase accepted loan disbursement ${result.result.id}.`, result.refreshError ? 'warning' : 'success');
+          store.notify();
+        } catch (error) {
+          button.disabled = false;
+          App.showToast(`Disbursement rejected: ${error.message}`, 'danger');
         }
       });
     });
     container.querySelectorAll('.btn-assess-loan-penalty').forEach(button => {
-      button.addEventListener('click', () => {
+      button.addEventListener('click', async () => {
         const suggested = Number(button.dataset.suggested) || 0;
         const value = prompt(`Suggested penalty: ${Formatter.money(suggested)}\nEnter the authorized amount to record:`, suggested || '');
         if (value === null) return;
         const reason = prompt('Enter the reason / review note for this penalty:');
         if (reason === null) return;
+        button.disabled = true;
         try {
-          store.recordLoanPenalty({
+          const result = await store.recordLoanPenalty({
             memberId: button.dataset.memberId,
             loanId: button.dataset.loanId,
             installmentId: button.dataset.installmentId,
             amount: value,
             reason
-          });
-          App.showToast('Penalty assessment recorded on the loan account.', 'success');
+          }, { idempotencyKey: button.dataset.idempotencyKey ||= crypto.randomUUID(), notify: false });
+          App.showToast(result.refreshError ? `Penalty accepted; refresh failed: ${result.refreshError.message}` : 'Supabase recorded the penalty assessment.', result.refreshError ? 'warning' : 'success');
+          store.notify();
         } catch (error) {
+          button.disabled = false;
           App.showToast(error.message, 'danger');
         }
       });
     });
     container.querySelectorAll('.form-loan-product').forEach(form => {
-      form.addEventListener('submit', event => {
+      form.addEventListener('submit', async event => {
         event.preventDefault();
         const values = Object.fromEntries(new FormData(form));
+        const button = form.querySelector('[type="submit"]');
+        button.disabled = true;
+        form.dataset.idempotencyKey ||= crypto.randomUUID();
         try {
-          store.updateLoanProduct(form.dataset.productId, values);
-          App.showToast('Product policy saved for new applications.', 'success');
+          const result = await store.updateLoanProduct(form.dataset.productId, values, {
+            idempotencyKey: form.dataset.idempotencyKey, notify: false
+          });
+          App.showToast(result.refreshError ? `Product policy accepted; refresh failed: ${result.refreshError.message}` : 'Supabase saved the product policy.', result.refreshError ? 'warning' : 'success');
+          delete form.dataset.idempotencyKey;
+          store.notify();
         } catch (error) {
+          button.disabled = false;
           App.showToast(error.message, 'danger');
         }
       });
     });
     container.querySelector('#form-add-loan-product')?.addEventListener('submit', event => {
       event.preventDefault();
-      const values = Object.fromEntries(new FormData(event.currentTarget));
-      try {
-        store.addLoanProduct(values);
-        App.showToast('Loan product added.', 'success');
-      } catch (error) {
-        App.showToast(error.message, 'danger');
-      }
+      const form = event.currentTarget;
+      const values = Object.fromEntries(new FormData(form));
+      const button = form.querySelector('[type="submit"]');
+      button.disabled = true;
+      form.dataset.idempotencyKey ||= crypto.randomUUID();
+      store.addLoanProduct(values, { idempotencyKey: form.dataset.idempotencyKey, notify: false })
+        .then(result => {
+          App.showToast(result.refreshError ? `Product accepted; refresh failed: ${result.refreshError.message}` : 'Supabase created the loan product.', result.refreshError ? 'warning' : 'success');
+          delete form.dataset.idempotencyKey;
+          store.notify();
+        })
+        .catch(error => {
+          button.disabled = false;
+          App.showToast(error.message, 'danger');
+        });
     });
   },
 
@@ -613,33 +657,60 @@ const CreditView = {
     // Auto Pace Queue
     const autoPaceBtn = container.querySelector('#btn-auto-pace-queue');
     if (autoPaceBtn) {
-      autoPaceBtn.addEventListener('click', () => {
-        pacing.prioritizedQueue.forEach(loan => {
-          store.updateDisbursementStatus(loan.id, 'Approved - Pending Pacing', loan.isRecommendedImmediate ? 'Batch 1' : 'Batch 2');
-        });
-        App.showToast('Queue re-optimized. Safe loans prioritized into Batch 1 immediate release.', 'success');
+      autoPaceBtn.addEventListener('click', async () => {
+        autoPaceBtn.disabled = true;
+        try {
+          const outcomes = await Promise.all(pacing.prioritizedQueue
+            .filter(loan => loan.status === 'Approved - Pending Pacing')
+            .map(loan => store.updateDisbursementStatus(
+              loan.id, loan.status, loan.isRecommendedImmediate ? 'Batch 1' : 'Batch 2',
+              { idempotencyKey: crypto.randomUUID(), notify: false }
+            )));
+          App.showToast(`${outcomes.length} approved applications paced by Supabase.`, 'success');
+          store.notify();
+        } catch (error) {
+          autoPaceBtn.disabled = false;
+          App.showToast(`Pacing request rejected: ${error.message}`, 'danger');
+        }
       });
     }
 
     // Workflow Approve / Reject
     const approveBtns = container.querySelectorAll('.btn-wf-approve');
     approveBtns.forEach(btn => {
-      btn.addEventListener('click', () => {
+      btn.addEventListener('click', async () => {
         const taskId = btn.dataset.id;
-        const result = WorkflowEngine.processTask(taskId, 'Approve', 'Credit');
-        if (result?.success) App.showToast(`Workflow Task ${taskId} approved.`, 'success');
-        else App.showToast(result?.error || 'Workflow approval failed.', 'danger');
+        btn.disabled = true;
+        const result = await WorkflowEngine.processTask(taskId, 'Approve', 'Credit', '', {
+          idempotencyKey: btn.dataset.idempotencyKey ||= crypto.randomUUID(), notify: false
+        });
+        if (result?.success) {
+          App.showToast(result.refreshError ? `Approval accepted; refresh failed: ${result.refreshError.message}` : `Supabase approved workflow ${taskId}.`, result.refreshError ? 'warning' : 'success');
+          store.notify();
+        } else {
+          btn.disabled = false;
+          App.showToast(result?.error || 'Workflow approval failed.', 'danger');
+        }
       });
     });
 
     const rejectBtns = container.querySelectorAll('.btn-wf-reject');
     rejectBtns.forEach(btn => {
-      btn.addEventListener('click', () => {
+      btn.addEventListener('click', async () => {
         const taskId = btn.dataset.id;
         const reason = prompt('Enter rejection / exception reason:', 'Policy exception / Insufficient liquidity');
         if (reason) {
-          WorkflowEngine.processTask(taskId, 'Reject', 'Credit', reason);
-          App.showToast(`Workflow Task ${taskId} rejected.`, 'info');
+          btn.disabled = true;
+          const result = await WorkflowEngine.processTask(taskId, 'Reject', 'Credit', reason, {
+            idempotencyKey: btn.dataset.idempotencyKey ||= crypto.randomUUID(), notify: false
+          });
+          if (result?.success) {
+            App.showToast(result.refreshError ? `Rejection accepted; refresh failed: ${result.refreshError.message}` : `Supabase rejected workflow ${taskId}.`, result.refreshError ? 'warning' : 'info');
+            store.notify();
+          } else {
+            btn.disabled = false;
+            App.showToast(result?.error || 'Workflow rejection failed.', 'danger');
+          }
         }
       });
     });
@@ -647,13 +718,21 @@ const CreditView = {
     // Individual Disburse Buttons
     const disburseBtns = container.querySelectorAll('.btn-disburse-loan');
     disburseBtns.forEach(btn => {
-      btn.addEventListener('click', () => {
+      btn.addEventListener('click', async () => {
         const loanId = btn.dataset.id;
         const loan = state.disbursementQueue.find(l => l.id === loanId);
         if (loan) {
           if (confirm(`Confirm immediate cash disbursement of ${Formatter.money(loan.amount)} to ${loan.clientName}?`)) {
-            if (store.updateDisbursementStatus(loanId, 'Disbursed')) {
-              App.showToast(`Disbursed ${Formatter.money(loan.amount)} to ${loan.clientName}.`, 'success');
+            btn.disabled = true;
+            try {
+              const outcome = await store.updateDisbursementStatus(loanId, 'Disbursed', null, {
+                idempotencyKey: btn.dataset.idempotencyKey ||= crypto.randomUUID(), notify: false
+              });
+              App.showToast(outcome.refreshError ? `Disbursement accepted; refresh failed: ${outcome.refreshError.message}` : `Supabase accepted loan ${loanId} disbursement.`, outcome.refreshError ? 'warning' : 'success');
+              store.notify();
+            } catch (error) {
+              btn.disabled = false;
+              App.showToast(`Disbursement rejected: ${error.message}`, 'danger');
             }
           }
         }
@@ -663,13 +742,22 @@ const CreditView = {
     // Shift Batch Buttons
     const shiftBtns = container.querySelectorAll('.btn-shift-batch');
     shiftBtns.forEach(btn => {
-      btn.addEventListener('click', () => {
+      btn.addEventListener('click', async () => {
         const loanId = btn.dataset.id;
         const loan = state.disbursementQueue.find(l => l.id === loanId);
         if (loan) {
           const nextBatch = loan.staggeredBatch === 'Batch 1' ? 'Batch 2' : (loan.staggeredBatch === 'Batch 2' ? 'Batch 3' : 'Batch 1');
-          store.updateDisbursementStatus(loanId, loan.status, nextBatch);
-          App.showToast(`Loan ${loanId} shifted to ${nextBatch}.`, 'info');
+          btn.disabled = true;
+          try {
+            const outcome = await store.updateDisbursementStatus(loanId, loan.status, nextBatch, {
+              idempotencyKey: btn.dataset.idempotencyKey ||= crypto.randomUUID(), notify: false
+            });
+            App.showToast(outcome.refreshError ? `Pacing accepted; refresh failed: ${outcome.refreshError.message}` : `Supabase assigned loan ${loanId} to ${nextBatch}.`, outcome.refreshError ? 'warning' : 'info');
+            store.notify();
+          } catch (error) {
+            btn.disabled = false;
+            App.showToast(`Pacing update rejected: ${error.message}`, 'danger');
+          }
         }
       });
     });
@@ -677,21 +765,23 @@ const CreditView = {
     // Post NPA Provision to GL (Layer 5 -> Layer 0)
     const provBtn = container.querySelector('#btn-post-npa-provision');
     if (provBtn) {
-      provBtn.addEventListener('click', () => {
+      provBtn.addEventListener('click', async () => {
         const defaultAmt = state.npaSummary?.watch?.requiredProvision || 50000;
         const input = prompt(`Enter NPA Loan Loss Provision amount to post into GL (${Formatter.currencySymbol}):\nDouble-Entry: Dr 5030 Provision Expense / Cr 1250 Loan Loss Reserve`, defaultAmt);
         if (input && !isNaN(Number(input)) && Number(input) > 0) {
           const amt = Number(input);
-          const res = PortfolioEngine.postLoanLossProvision(state, {
+          provBtn.disabled = true;
+          try {
+          const res = await PortfolioEngine.postLoanLossProvision(state, {
             amount: amt,
             notes: `NPA loan loss provision charge for watch/substandard risk portfolio`,
             user: store.getCurrentUser()
-          });
-
-          if (res.success) {
-            App.showToast(`✓ Provision of ${Formatter.money(amt)} posted to GL: Dr 5030 / Cr 1250. Ledger updated in real-time!`, 'success');
-          } else {
-            App.showToast(`Provision post failed: ${res.error}`, 'danger');
+          }, { idempotencyKey: provBtn.dataset.idempotencyKey ||= crypto.randomUUID(), notify: false });
+          App.showToast(res.refreshError ? `Supabase accepted provision ${res.result?.id}; refresh failed: ${res.refreshError.message}` : `Supabase accepted provision ${res.result?.id}.`, res.refreshError ? 'warning' : 'success');
+          store.notify();
+          } catch (error) {
+            provBtn.disabled = false;
+            App.showToast(`Provision rejected: ${error.message}`, 'danger');
           }
         }
       });

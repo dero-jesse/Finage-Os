@@ -11,30 +11,6 @@ class FinageStore {
   }
 
   loadInitialState() {
-    const saved = localStorage.getItem(this.storageKey);
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        const defaultState = this.getDefaultState();
-        parsed.loanProducts ||= defaultState.loanProducts;
-        parsed.loanPenaltyPolicyVersion ||= 1;
-        // Automatically migrate if generalLedger has legacy structure or trialBalanceExceptions is missing
-        if (!parsed.generalLedger || parsed.generalLedger.length < defaultState.generalLedger.length || !parsed.trialBalanceExceptions) {
-          console.log('Migrating store state to compliant v3.1 Chart of Accounts...');
-          parsed.generalLedger = defaultState.generalLedger;
-          parsed.trialBalanceExceptions = defaultState.trialBalanceExceptions;
-          parsed.smsAlerts = defaultState.smsAlerts || [];
-        }
-        parsed.users = (parsed.users || []).filter(user => user.email?.toLowerCase() !== 'admin@finage.co.ug');
-        const platformSuperuser = defaultState.users.find(user => user.email === 'superuser@finage.io');
-        if (platformSuperuser && !parsed.users.some(user => user.email?.toLowerCase() === platformSuperuser.email)) {
-          parsed.users.push(platformSuperuser);
-        }
-        return parsed;
-      } catch (e) {
-        console.warn('Failed to parse stored state, using defaults', e);
-      }
-    }
     return this.getDefaultState();
   }
 
@@ -903,18 +879,14 @@ class FinageStore {
   }
 
   save(...dirtyKeys) {
-    localStorage.setItem(this.storageKey, JSON.stringify(this.state));
-    this.notify();
+    return this._rejectLocalOperationalWrite(true);
   }
 
   saveLocal() {
-    localStorage.setItem(this.storageKey, JSON.stringify(this.state));
-    this.notify();
+    return this._rejectLocalOperationalWrite(true);
   }
 
   prepareTenantState(schemaName) {
-    const activeSchemaKey = 'finage_active_data_schema';
-    const previousSchema = localStorage.getItem(activeSchemaKey);
     const localDataKeys = [
       'roles', 'users', 'branches', 'members', 'generalLedger', 'transactions',
       'recentTransactions', 'auditTrail', 'loanProducts', 'loanPenaltyPolicyVersion',
@@ -923,41 +895,22 @@ class FinageStore {
       'externalFacilities', 'operatingExpenses', 'portfolioQuality', 'disbursementQueue',
       'stressTesting', 'alerts', 'npaSummary'
     ];
-
-    const currentData = Object.fromEntries(localDataKeys.map(key => [key, this.state[key]]));
-    if (previousSchema && previousSchema !== schemaName) {
-      const previousData = currentData;
-      localStorage.setItem(`finage_tenant_modules_${previousSchema}`, JSON.stringify(previousData));
-    }
-
     const cleanState = this.getCleanState();
-    const emptyTenantData = {
-      roles: [], users: [], branches: [], members: [], generalLedger: [],
-      transactions: [], recentTransactions: [], auditTrail: []
-    };
-    let savedTenantData = previousSchema === schemaName ? currentData : null;
-    if (previousSchema !== schemaName) {
-      try {
-        savedTenantData = JSON.parse(localStorage.getItem(`finage_tenant_modules_${schemaName}`) || 'null');
-      } catch (_) {}
-    }
-
     localDataKeys.forEach(key => {
-      const value = savedTenantData && Object.prototype.hasOwnProperty.call(savedTenantData, key)
-        ? savedTenantData[key]
-        : (Object.prototype.hasOwnProperty.call(emptyTenantData, key) ? emptyTenantData[key] : cleanState[key]);
-      this.state[key] = JSON.parse(JSON.stringify(value));
+      this.state[key] = JSON.parse(JSON.stringify(cleanState[key]));
     });
-
     this.state.selectedMemberId = null;
-    localStorage.setItem(activeSchemaKey, schemaName);
-    localStorage.setItem(this.storageKey, JSON.stringify(this.state));
+    this.state.institution.schemaName = schemaName;
   }
 
-  // Persist state without triggering a full view re-render.
-  // Use for high-frequency teller operations so the member workspace doesn't reset.
+  _rejectLocalOperationalWrite(notify = false) {
+    if (notify) this.notify();
+    return false;
+  }
+
+  // Operational records must never be persisted in browser storage.
   saveQuiet(...dirtyKeys) {
-    localStorage.setItem(this.storageKey, JSON.stringify(this.state));
+    return this._rejectLocalOperationalWrite();
   }
 
   subscribe(listener) {
@@ -996,24 +949,6 @@ class FinageStore {
       (t.tellerName && t.tellerName.toLowerCase().trim() === currentUser.name.toLowerCase().trim())
     );
 
-    const userRoles = typeof UserManagementEngine !== 'undefined' ? UserManagementEngine.getUserRoles(s, currentUser.id) : [];
-    const isTeller = userRoles.some(r => r.id === 'ROLE-TELLER' || r.category === 'teller') || (currentUser.roles && currentUser.roles.includes('ROLE-TELLER'));
-
-    if (!till && isTeller) {
-      const nextNum = branch.tillBalances.length + 1;
-      const branchNum = (branch.id || '01').replace(/\D/g, '') || '1';
-      const newTillId = `T-${branchNum}0${nextNum}`;
-      till = {
-        tellerId: currentUser.tellerId || newTillId,
-        userId: currentUser.id,
-        tellerName: currentUser.name,
-        balance: 30000,
-        status: 'Active (Open)'
-      };
-      branch.tillBalances.push(till);
-      currentUser.tellerId = till.tellerId;
-    }
-
     return till ? { ...till, branchId: branch.id, branchName: branch.name } : null;
   }
 
@@ -1026,102 +961,19 @@ class FinageStore {
     const roleObj = this.state.roles.find(r => r.id === firstRoleId);
     this.state.currentRole = roleObj ? roleObj.category : null;
     this.state.selectedBranchId = user.branchId;
-    user.lastLogin = new Date().toISOString();
-
-    this.state.auditTrail.unshift({
-      id: `AUD-${Date.now().toString().slice(-4)}`,
-      timestamp: new Date().toISOString(),
-      userId: user.id,
-      userName: user.name,
-      action: 'USER_LOGIN_SESSION_ACTIVE',
-      module: 'Access Control (Layer 9)',
-      entityId: user.id,
-      description: `User ${user.name} switched operator context`,
-      ipAddress: '192.168.10.45',
-      glImpact: 'None'
-    });
-
-    this.save();
     return true;
   }
 
   addUser(userData) {
-    const newUser = {
-      id: `USR-${Date.now().toString().slice(-3)}`,
-      name: userData.name,
-      email: userData.email,
-      roles: userData.roles || [],
-      branchId: userData.branchId || 'br-01',
-      branchName: userData.branchName || 'Nairobi Central',
-      singleApprovalLimit: Number(userData.singleApprovalLimit) || 0,
-      dailyApprovalLimit: Number(userData.dailyApprovalLimit) || 0,
-      status: 'Active',
-      mfaEnabled: true,
-      lastLogin: new Date().toISOString()
-    };
-
-    this.state.users.push(newUser);
-
-    this.state.auditTrail.unshift({
-      id: `AUD-${Date.now().toString().slice(-4)}`,
-      timestamp: new Date().toISOString(),
-      userId: this.state.currentUserId,
-      userName: this.getCurrentUser().name,
-      action: 'NEW_SYSTEM_USER_CREATED',
-      module: 'User Administration (RBAC)',
-      entityId: newUser.id,
-      description: `Created user ${newUser.name} with limit ${Formatter.money(newUser.singleApprovalLimit)}`,
-      ipAddress: '192.168.1.10',
-      glImpact: 'None'
-    });
-
-    this.save();
-
-    return newUser.id;
+    throw new Error('Tenant user provisioning must use the authenticated server-side invitation service.');
   }
 
-  updateUserRoles(userId, newRoles) {
-    const user = this.state.users.find(u => u.id === userId);
-    if (!user) return false;
-    user.roles = newRoles;
-
-    this.state.auditTrail.unshift({
-      id: `AUD-${Date.now().toString().slice(-4)}`,
-      timestamp: new Date().toISOString(),
-      userId: this.state.currentUserId,
-      userName: this.getCurrentUser().name,
-      action: 'USER_ROLES_UPDATED',
-      module: 'User Administration (RBAC)',
-      entityId: userId,
-      description: `Updated roles for ${user.name}`,
-      ipAddress: '192.168.1.10',
-      glImpact: 'None'
-    });
-
-    this.save();
-    return true;
+  async updateUserRoles(userId, newRoles, options = {}) {
+    return window.Platform.executeDomainAction('update_user_roles', { userId, roles: newRoles }, options);
   }
 
-  updateUserStatus(userId, newStatus) {
-    const user = this.state.users.find(u => u.id === userId);
-    if (!user) return false;
-
-    user.status = newStatus;
-    this.state.auditTrail.unshift({
-      id: `AUD-${Date.now().toString().slice(-4)}`,
-      timestamp: new Date().toISOString(),
-      userId: this.state.currentUserId,
-      userName: this.getCurrentUser().name,
-      action: 'USER_STATUS_UPDATED',
-      module: 'User Administration (RBAC)',
-      entityId: userId,
-      description: `User ${user.name} status changed to ${newStatus}`,
-      ipAddress: '192.168.1.10',
-      glImpact: 'None'
-    });
-
-    this.save();
-    return true;
+  async updateUserStatus(userId, newStatus, options = {}) {
+    return window.Platform.executeDomainAction('update_user_status', { userId, status: newStatus }, options);
   }
 
   setRole(role) {
@@ -1262,6 +1114,14 @@ class FinageStore {
 
   // --- Real-time Double-Entry Posting Action ---
   postTransaction({ type, memberId, loanId, amount, channel = 'Branch FOSA', glDebitCode, glCreditCode, description, legs, bankAccountId }) {
+    if (window.Platform?.context?.operationalStatus !== 'ready' ||
+        typeof window.Platform?.postFinancialTransaction !== 'function') {
+      if (typeof App !== 'undefined' && App.showToast) {
+        App.showToast('Financial posting is disabled: no authorized online atomic posting service is deployed.', 'danger');
+      }
+      this._rejectLocalOperationalWrite();
+      return false;
+    }
     const parsedAmount = Number(amount);
     const validation = this.validateTransactionRequest({
       type,
@@ -1500,48 +1360,12 @@ class FinageStore {
     return newFacility.id;
   }
 
-  addMember(memberData) {
-    const newId = `MEM-${Date.now().toString().slice(-4)}`;
-    const currentUser = this.getCurrentUser();
-
-    const newMember = {
-      id: newId,
-      name: memberData.name,
-      nationalId: memberData.nationalId,
-      phone: memberData.phone,
-      email: memberData.email || `${memberData.name.split(' ')[0].toLowerCase()}@example.com`,
-      joinDate: new Date().toISOString().split('T')[0],
-      branchId: memberData.branchId,
-      branchName: memberData.branchName,
-      kycStatus: 'Verified (New Onboarding)',
-      occupation: memberData.occupation || 'Retail Client',
-      employer: memberData.employer || 'Self',
-      riskSegment: 'Low Risk',
-      relationshipScore: 50,
-      savingsBalance: 0,
-      fixedDepositBalance: 0,
-      shareCapital: 0,
-      activeLoans: [],
-      guarantorCommitments: []
-    };
-
-    this.state.members.unshift(newMember);
-
-    this.state.auditTrail.unshift({
-      id: `AUD-${Date.now().toString().slice(-4)}`,
-      timestamp: new Date().toISOString(),
-      userId: currentUser?.id,
-      userName: currentUser?.name,
-      action: 'MEMBER_ONBOARDED',
-      module: 'Core Banking (Layer 0)',
-      entityId: newId,
-      description: `Onboarded new member: ${newMember.name} (ID: ${newMember.nationalId})`,
-      ipAddress: '192.168.10.45',
-      glImpact: 'None (Account Created)'
-    });
-
-    this.save();
-    return newMember;
+  async addMember(memberData) {
+    if (!window.Platform?.createMember) {
+      throw new Error('No authorized online member creation service is available.');
+    }
+    const result = await window.Platform.createMember(memberData);
+    return Object.assign(result.member, { refreshError: result.refreshError });
   }
 
   addLoanApplication(formData) {
@@ -2028,6 +1852,99 @@ class FinageStore {
       available = Math.max(0, available - amount);
     });
     loan.nextDueDate = schedule.find(installment => installment.status !== 'Paid')?.dueDate || null;
+  }
+
+  async addLoanApplication(formData, options = {}) {
+    return window.Platform.executeDomainAction('create_loan_application', {
+      memberId: formData.memberId,
+      productId: formData.productId,
+      amount: Number(formData.amount),
+      purpose: String(formData.purpose || '').trim(),
+      termMonths: Number(formData.term ?? formData.termMonths),
+      guarantorMemberId: formData.guarantorMemberId || null,
+      urgency: formData.urgency || 'Medium'
+    }, options);
+  }
+
+  async addLoanProduct(values, options = {}) {
+    return window.Platform.executeDomainAction('create_loan_product', {
+      name: values.name,
+      annualInterestRate: Number(values.annualInterestRate),
+      repaymentMethod: values.repaymentMethod,
+      penaltyGraceDays: Number(values.penaltyGraceDays) || 0,
+      penaltyFixedFee: Number(values.penaltyFixedFee) || 0,
+      penaltyDailyRate: Number(values.penaltyDailyRate) || 0
+    }, options);
+  }
+
+  async updateLoanProduct(productId, values, options = {}) {
+    return window.Platform.executeDomainAction('update_loan_product', {
+      productId,
+      annualInterestRate: Number(values.annualInterestRate),
+      repaymentMethod: values.repaymentMethod,
+      penaltyGraceDays: Number(values.penaltyGraceDays) || 0,
+      penaltyFixedFee: Number(values.penaltyFixedFee) || 0,
+      penaltyDailyRate: Number(values.penaltyDailyRate) || 0
+    }, options);
+  }
+
+  async recordLoanPenalty({ memberId, loanId, installmentId, amount, reason }, options = {}) {
+    return window.Platform.executeDomainAction('assess_loan_penalty', {
+      memberId, loanId, installmentId, amount: Number(amount), reason: String(reason || '').trim()
+    }, options);
+  }
+
+  async updateDisbursementStatus(loanId, newStatus, batch = null, options = {}) {
+    if (newStatus === 'Disbursed') {
+      return window.Platform.executeDomainAction('disburse_loan_application', { applicationId: loanId }, options);
+    }
+    if (batch) {
+      return window.Platform.executeDomainAction('set_loan_pacing', { applicationId: loanId, batch }, options);
+    }
+    throw new Error('Loan status changes require an authorized online workflow action.');
+  }
+
+  async approveWorkflowTask(taskId, approverRole, options = {}) {
+    const task = this.state.workflowTasks.find(item => item.id === taskId);
+    if (!task || task.type !== 'Loan Application Review') {
+      throw new Error('This workflow type is not enabled for online approval.');
+    }
+    return window.Platform.executeDomainAction('review_loan_application', {
+      applicationId: task.entityId, decision: 'Approve', reason: ''
+    }, options);
+  }
+
+  async submitBranchReconciliation(branchId, vaultCount, tellerEntries, notes, options = {}) {
+    if (tellerEntries) throw new Error('Bulk teller-float changes are not enabled; reconcile one authenticated operator till at a time.');
+    return window.Platform.executeDomainAction('reconcile_vault', {
+      branchId, cashInVault: Number(vaultCount), notes: notes || ''
+    }, options);
+  }
+
+  async reconcileAssignedTill(balance, options = {}) {
+    return window.Platform.executeDomainAction('reconcile_assigned_till', { balance: Number(balance) }, options);
+  }
+
+  async recordDFIDrawdown({ facilityId, amount, notes }, options = {}) {
+    return window.Platform.executeDomainAction('draw_external_facility', {
+      facilityId, amount: Number(amount), notes: notes || ''
+    }, options);
+  }
+
+  async addExternalFacility(facilityData, options = {}) {
+    return window.Platform.executeDomainAction('create_external_facility', facilityData, options);
+  }
+
+  async addOperatingExpense(opExData, options = {}) {
+    return window.Platform.executeDomainAction('create_operating_expense', {
+      category: opExData.category,
+      monthlyAmount: Number(opExData.monthlyAmount ?? opExData.amount),
+      dueDay: Number(opExData.dueDay) || 15
+    }, options);
+  }
+
+  async ingestBatchTransactions() {
+    throw new Error('Batch ingestion is not enabled; transactions must be individually server-authorized and idempotent.');
   }
 
   getCleanState() {

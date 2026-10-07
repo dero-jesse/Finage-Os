@@ -398,14 +398,27 @@ const UserManagementView = {
     // Edit user form submit
     const editForm = container.querySelector('#form-edit-roles');
     if (editForm) {
-      editForm.addEventListener('submit', (e) => {
+      editForm.addEventListener('submit', async (e) => {
         e.preventDefault();
         const roleSelect = container.querySelector('#inp-edit-role');
         const roles = Array.from(roleSelect.selectedOptions).map(opt => opt.value);
         
         if (this.editingUserId) {
-          store.updateUserRoles(this.editingUserId, roles);
-          App.showToast(`Roles updated successfully.`, 'success');
+          const submitButton = editForm.querySelector('[type="submit"]');
+          submitButton.disabled = true;
+          editForm.dataset.idempotencyKey ||= crypto.randomUUID();
+          try {
+            const outcome = await store.updateUserRoles(this.editingUserId, roles, {
+              idempotencyKey: editForm.dataset.idempotencyKey, notify: false
+            });
+            App.showToast(outcome.refreshError ? `Supabase accepted the role change; refresh failed: ${outcome.refreshError.message}` : 'Supabase accepted the role change.', outcome.refreshError ? 'warning' : 'success');
+            delete editForm.dataset.idempotencyKey;
+            store.notify();
+          } catch (error) {
+            submitButton.disabled = false;
+            App.showToast(`Role change rejected: ${error.message}`, 'danger');
+            return;
+          }
           
           this.activeTab = 'users';
           const tabs = container.querySelectorAll('.input-tab-btn');
@@ -436,6 +449,10 @@ const UserManagementView = {
   },
 
   open() {
+    if (window.Platform?.context?.operationalStatus !== 'ready') {
+      App.showToast('Tenant user administration is unavailable until online domain write services are deployed.', 'danger');
+      return;
+    }
     if (!App.hasPermission('MANAGE_USERS')) {
       App.showToast('You do not have permission to manage users.', 'danger');
       return;

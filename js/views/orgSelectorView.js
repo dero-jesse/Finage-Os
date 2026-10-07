@@ -202,12 +202,18 @@ const OrgSelectorView = {
 
     // Select an org
     container.querySelectorAll('.org-select-card').forEach(card => {
-      card.addEventListener('click', () => {
+      card.addEventListener('click', async () => {
         const orgId = card.dataset.orgId;
-        if (window.Platform && Platform.setActiveOrg(orgId)) {
+        if (!window.Platform) return;
+        card.disabled = true;
+        try {
+          await Platform.activateOrg(orgId);
           store.state.orgSelectorShown = false;
-          store.saveLocal();
-          if (App && App.showToast) App.showToast('Switched to: ' + Platform.getActiveOrg().name, 'success');
+          store.notify();
+          if (App && App.showToast) App.showToast('Connected to: ' + Platform.getActiveOrg().name, 'success');
+        } catch (error) {
+          card.disabled = false;
+          if (App && App.showToast) App.showToast(`Could not load organization data: ${error.message}`, 'danger');
         }
       });
     });

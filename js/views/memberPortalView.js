@@ -689,7 +689,7 @@ const TellerDeskView = {
     }
 
     if (confirmPost) {
-      confirmPost.addEventListener('click', () => {
+      confirmPost.addEventListener('click', async () => {
         const txType = txTypeSelect.value;
         const amount = Number(txAmountInput.value);
         const issue  = getTransactionIssue();
@@ -703,23 +703,41 @@ const TellerDeskView = {
         const def = TX_TYPES.find(t => t.type === txType) || TX_TYPES[0];
         const loanIdx = parseInt(container.querySelector('#teller-loan-select')?.value);
         const loanId  = (!isNaN(loanIdx) && profile.activeLoans[loanIdx]) ? profile.activeLoans[loanIdx].loanId : null;
-
-        const result = CoreBankingEngine.executeTransaction(state, {
-          type: `Teller ${txType}`,
-          memberId: profile.id,
-          loanId,
-          amount,
-          channel: 'Branch FOSA Counter',
-          debitGL: def.debitGL,
-          creditGL: def.creditGL,
-          description: `FOSA Teller ${txType} via Denomination Desk`
-        });
-
-        closePostConfirmation();
-
-        if (!result) {
-          App.showToast('Transaction rejected by core banking engine. Check permissions or balance.', 'danger');
+        if (!['Deposit', 'Withdrawal', 'Loan Payment'].includes(txType)) {
+          closePostConfirmation();
+          App.showToast('Teller loan disbursement is not enabled in this online phase.', 'danger');
           return;
+        }
+        confirmPost.disabled = true;
+        confirmPost.textContent = 'Waiting for Supabase…';
+        confirmPost.dataset.idempotencyKey ||= crypto.randomUUID();
+        try {
+          const result = await Platform.postFinancialTransaction({
+            type: `Teller ${txType}`,
+            memberId: profile.id,
+            loanId,
+            amount,
+            channel: 'Branch FOSA Counter',
+            description: `FOSA Teller ${txType} via Denomination Desk`,
+            legs: [
+              { glCode: def.debitGL, type: 'Debit', amount },
+              { glCode: def.creditGL, type: 'Credit', amount }
+            ],
+            idempotencyKey: confirmPost.dataset.idempotencyKey
+          });
+          delete confirmPost.dataset.idempotencyKey;
+          closePostConfirmation();
+          if (result.refreshError) {
+            App.showToast(`Supabase accepted ${result.transaction.id}, but the updated balances could not be reloaded: ${result.refreshError.message}`, 'warning');
+            return;
+          }
+        } catch (error) {
+          closePostConfirmation();
+          App.showToast(`Supabase rejected the transaction: ${error.message}`, 'danger');
+          return;
+        } finally {
+          confirmPost.disabled = false;
+          confirmPost.textContent = 'Confirm';
         }
 
         const savingsEl = container.querySelector('#teller-savings-balance');
@@ -734,7 +752,7 @@ const TellerDeskView = {
           headerFloat.textContent = `FLOAT: ${Formatter.money(freshTill.balance)}`;
         }
 
-        App.showToast(`✓ ${def.label} of ${Formatter.money(amount)} posted — GL Dr ${def.debitGL} / Cr ${def.creditGL}.`, 'success');
+        App.showToast(`✓ ${def.label} of ${Formatter.money(amount)} accepted by Supabase.`, 'success');
 
         txAmountInput.value = '0';
         container.querySelectorAll('.tx-denom').forEach(inp => inp.value = '0');

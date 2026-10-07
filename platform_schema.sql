@@ -196,6 +196,7 @@ BEGIN
             roles JSONB DEFAULT ''[]''::JSONB,
             "branchId" TEXT,
             "branchName" TEXT,
+            "tellerId" TEXT,
             "singleApprovalLimit" NUMERIC DEFAULT 0,
             "dailyApprovalLimit" NUMERIC DEFAULT 0,
             status TEXT DEFAULT ''Active'',
@@ -345,10 +346,13 @@ BEGIN
     EXECUTE format('REVOKE ALL ON SCHEMA %I FROM PUBLIC, anon', v_schema);
     EXECUTE format('GRANT USAGE ON SCHEMA %I TO authenticated, service_role', v_schema);
     EXECUTE format('REVOKE ALL ON ALL TABLES IN SCHEMA %I FROM PUBLIC, anon', v_schema);
-    EXECUTE format('GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA %I TO authenticated', v_schema);
+    EXECUTE format('REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON ALL TABLES IN SCHEMA %I FROM authenticated', v_schema);
+    -- Browser clients are read-only until each domain has an authorized atomic RPC.
+    EXECUTE format('GRANT SELECT ON ALL TABLES IN SCHEMA %I TO authenticated', v_schema);
     EXECUTE format('GRANT ALL ON ALL TABLES IN SCHEMA %I TO service_role', v_schema);
     EXECUTE format('ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA %I REVOKE ALL ON TABLES FROM PUBLIC, anon', v_schema);
-    EXECUTE format('ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA %I GRANT SELECT, INSERT, UPDATE ON TABLES TO authenticated', v_schema);
+    EXECUTE format('ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA %I REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON TABLES FROM authenticated', v_schema);
+    EXECUTE format('ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA %I GRANT SELECT ON TABLES TO authenticated', v_schema);
     EXECUTE format('ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA %I GRANT ALL ON TABLES TO service_role', v_schema);
 
     EXECUTE format('CREATE TABLE IF NOT EXISTS %I.migration_batches (
@@ -480,7 +484,7 @@ BEGIN
     EXECUTE format('CREATE POLICY tenant_members_update ON %I.members FOR UPDATE TO authenticated USING (%I.org_can_access_branch("branchId") AND (%I.org_has_permission(''MANAGE_USERS'') OR %I.org_has_permission(''APPROVE_BRANCH_LOAN_TIER1''))) WITH CHECK (%I.org_can_access_branch("branchId") AND (%I.org_has_permission(''MANAGE_USERS'') OR %I.org_has_permission(''APPROVE_BRANCH_LOAN_TIER1'')))', v_schema, v_schema, v_schema, v_schema, v_schema, v_schema, v_schema, v_schema);
 
     EXECUTE format('DROP POLICY IF EXISTS tenant_gl_select ON %I.general_ledger', v_schema);
-    EXECUTE format('CREATE POLICY tenant_gl_select ON %I.general_ledger FOR SELECT TO authenticated USING (%I.org_has_permission(''READ_ALL_MODULES'') OR %I.org_has_permission(''MODIFY_GL_JOURNAL'') OR %I.org_has_permission(''REPORTS_ACCESS''))', v_schema, v_schema, v_schema, v_schema);
+    EXECUTE format('CREATE POLICY tenant_gl_select ON %I.general_ledger FOR SELECT TO authenticated USING (%I.org_has_permission(''READ_ALL_MODULES'') OR %I.org_has_permission(''MODIFY_GL_JOURNAL'') OR %I.org_has_permission(''REPORTS_ACCESS'') OR %I.org_has_permission(''POST_COUNTER_TX'') OR %I.org_has_permission(''APPROVE_BRANCH_LOAN_TIER1''))', v_schema, v_schema, v_schema, v_schema, v_schema, v_schema);
     EXECUTE format('DROP POLICY IF EXISTS tenant_gl_insert ON %I.general_ledger', v_schema);
     EXECUTE format('CREATE POLICY tenant_gl_insert ON %I.general_ledger FOR INSERT TO authenticated WITH CHECK (%I.org_has_permission(''MODIFY_GL_JOURNAL''))', v_schema, v_schema);
     EXECUTE format('DROP POLICY IF EXISTS tenant_gl_update ON %I.general_ledger', v_schema);
@@ -494,7 +498,7 @@ BEGIN
     EXECUTE format('CREATE POLICY tenant_transactions_update ON %I.transactions FOR UPDATE TO authenticated USING (%I.org_can_access_branch("branchId") AND (%I.org_has_permission(''APPROVE_CREDIT_FACILITY'') OR %I.org_has_permission(''APPROVE_BRANCH_LOAN_TIER1'') OR %I.org_has_permission(''MODIFY_GL_JOURNAL''))) WITH CHECK (%I.org_can_access_branch("branchId") AND (%I.org_has_permission(''APPROVE_CREDIT_FACILITY'') OR %I.org_has_permission(''APPROVE_BRANCH_LOAN_TIER1'') OR %I.org_has_permission(''MODIFY_GL_JOURNAL'')))', v_schema, v_schema, v_schema, v_schema, v_schema, v_schema, v_schema, v_schema, v_schema);
 
     EXECUTE format('DROP POLICY IF EXISTS tenant_audit_select ON %I.audit_trail', v_schema);
-    EXECUTE format('CREATE POLICY tenant_audit_select ON %I.audit_trail FOR SELECT TO authenticated USING (%I.org_has_permission(''VIEW_AUDIT_LOGS'') OR %I.org_has_permission(''READ_ALL_MODULES''))', v_schema, v_schema, v_schema);
+    EXECUTE format('CREATE POLICY tenant_audit_select ON %I.audit_trail FOR SELECT TO authenticated USING (%I.org_has_permission(''VIEW_AUDIT_LOGS'') OR %I.org_has_permission(''READ_ALL_MODULES'') OR "userId" = %I.org_current_user_id())', v_schema, v_schema, v_schema, v_schema);
     EXECUTE format('DROP POLICY IF EXISTS tenant_audit_insert ON %I.audit_trail', v_schema);
     EXECUTE format('CREATE POLICY tenant_audit_insert ON %I.audit_trail FOR INSERT TO authenticated WITH CHECK ("userId" = %I.org_current_user_id())', v_schema, v_schema);
 
@@ -981,8 +985,159 @@ BEGIN
 END;
 $$;
 
-REVOKE ALL ON FUNCTION public.apply_tenant_setup(TEXT, JSONB, BOOLEAN) FROM PUBLIC, anon;
-GRANT EXECUTE ON FUNCTION public.apply_tenant_setup(TEXT, JSONB, BOOLEAN) TO authenticated;
+REVOKE ALL ON FUNCTION public.apply_tenant_setup(TEXT, JSONB, BOOLEAN) FROM PUBLIC, anon, authenticated;
+
+-- One-time, non-destructive import of the browser's supported legacy core records.
+-- Existing tenant records are never merged or overwritten by this migration path.
+CREATE OR REPLACE FUNCTION public.import_legacy_tenant_state(
+    p_org_id TEXT,
+    p_org_data JSONB
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+    v_schema TEXT;
+    v_can_manage BOOLEAN;
+    v_has_data BOOLEAN;
+    v_batch_id TEXT;
+BEGIN
+    SELECT schema_name INTO v_schema
+    FROM public.organizations
+    WHERE id = p_org_id AND status = 'active'
+    FOR UPDATE;
+    IF v_schema IS NULL OR v_schema !~ '^org_[a-z0-9_]+$' THEN
+        RAISE EXCEPTION 'Active organization not found.';
+    END IF;
+
+    EXECUTE format('SELECT %I.org_has_permission(''MANAGE_USERS'')', v_schema)
+    INTO v_can_manage;
+    IF NOT COALESCE(v_can_manage, false) THEN
+        RAISE EXCEPTION 'Organization administrator permission required for legacy import.';
+    END IF;
+
+    IF jsonb_typeof(COALESCE(p_org_data->'branches', '[]'::JSONB)) <> 'array'
+       OR jsonb_array_length(COALESCE(p_org_data->'branches', '[]'::JSONB)) = 0 THEN
+        RAISE EXCEPTION 'Legacy import requires at least one branch.';
+    END IF;
+
+    IF to_regclass(format('%I.branches', v_schema)) IS NULL
+       OR to_regclass(format('%I.general_ledger', v_schema)) IS NULL
+       OR to_regclass(format('%I.members', v_schema)) IS NULL
+       OR to_regclass(format('%I.transactions', v_schema)) IS NULL
+       OR to_regclass(format('%I.audit_trail', v_schema)) IS NULL
+       OR to_regclass(format('%I.migration_batches', v_schema)) IS NULL THEN
+        RAISE EXCEPTION 'Tenant operational schema is incomplete.';
+    END IF;
+    EXECUTE format(
+        'LOCK TABLE %1$I.branches, %1$I.general_ledger, %1$I.members,
+            %1$I.transactions, %1$I.audit_trail, %1$I.migration_batches
+         IN ACCESS EXCLUSIVE MODE',
+        v_schema
+    );
+    EXECUTE format(
+        'SELECT EXISTS (SELECT 1 FROM %1$I.branches)
+            OR EXISTS (SELECT 1 FROM %1$I.general_ledger)
+            OR EXISTS (SELECT 1 FROM %1$I.members)
+            OR EXISTS (SELECT 1 FROM %1$I.transactions)
+            OR EXISTS (SELECT 1 FROM %1$I.audit_trail)
+            OR EXISTS (SELECT 1 FROM %1$I.migration_batches)',
+        v_schema
+    ) INTO v_has_data;
+    IF v_has_data THEN
+        RAISE EXCEPTION 'Import refused: this organization already contains operational data or an import batch.';
+    END IF;
+    IF EXISTS (
+        SELECT 1 FROM jsonb_to_recordset(COALESCE(p_org_data->'branches', '[]'::JSONB)) AS item(id TEXT)
+        GROUP BY id HAVING COUNT(*) > 1
+    ) OR EXISTS (
+        SELECT 1 FROM jsonb_to_recordset(COALESCE(p_org_data->'glAccounts', '[]'::JSONB)) AS item(code TEXT)
+        GROUP BY code HAVING COUNT(*) > 1
+    ) OR EXISTS (
+        SELECT 1 FROM jsonb_to_recordset(COALESCE(p_org_data->'members', '[]'::JSONB)) AS item(id TEXT)
+        GROUP BY id HAVING COUNT(*) > 1
+    ) OR EXISTS (
+        SELECT 1 FROM jsonb_to_recordset(COALESCE(p_org_data->'members', '[]'::JSONB)) AS item("nationalId" TEXT)
+        GROUP BY "nationalId" HAVING COUNT(*) > 1
+    ) OR EXISTS (
+        SELECT 1 FROM jsonb_to_recordset(COALESCE(p_org_data->'transactions', '[]'::JSONB)) AS item(id TEXT)
+        GROUP BY id HAVING COUNT(*) > 1
+    ) OR EXISTS (
+        SELECT 1 FROM jsonb_to_recordset(COALESCE(p_org_data->'auditTrail', '[]'::JSONB)) AS item(id TEXT)
+        GROUP BY id HAVING COUNT(*) > 1
+    ) THEN
+        RAISE EXCEPTION 'Import refused: duplicate identifiers exist in the selected browser records.';
+    END IF;
+
+    v_batch_id := COALESCE(NULLIF(p_org_data->>'migrationBatchId', ''), 'LEGACY-' || uuid_generate_v4()::TEXT);
+    PERFORM public.apply_tenant_setup(p_org_id, p_org_data, true);
+
+    EXECUTE format($sql$
+        UPDATE %1$I.branches AS branch
+        SET "cashInVault" = COALESCE(imported."cashInVault", branch."cashInVault"),
+            "tillBalances" = COALESCE(imported."tillBalances", branch."tillBalances"),
+            "lastReconciledAt" = COALESCE(imported."lastReconciledAt", branch."lastReconciledAt"),
+            "reconciliationDiscrepancy" = COALESCE(imported."reconciliationDiscrepancy", branch."reconciliationDiscrepancy")
+        FROM jsonb_to_recordset($1) AS imported(
+            id TEXT, "cashInVault" NUMERIC, "tillBalances" JSONB,
+            "lastReconciledAt" TEXT, "reconciliationDiscrepancy" NUMERIC
+        )
+        WHERE branch.id = imported.id
+    $sql$, v_schema)
+    USING COALESCE(p_org_data->'branches', '[]'::JSONB);
+
+    EXECUTE format($sql$
+        UPDATE %1$I.transactions AS tx
+        SET approver = imported.approver,
+            "approverRole" = imported."approverRole",
+            "batchId" = imported."batchId",
+            "postedBy" = imported."postedBy"
+        FROM jsonb_to_recordset($1) AS imported(
+            id TEXT, approver TEXT, "approverRole" TEXT, "batchId" TEXT, "postedBy" TEXT
+        )
+        WHERE tx.id = imported.id
+    $sql$, v_schema)
+    USING COALESCE(p_org_data->'transactions', '[]'::JSONB);
+
+    EXECUTE format($sql$
+        INSERT INTO %1$I.audit_trail (
+            id, timestamp, "userId", "userName", action, module, "entityId",
+            description, "ipAddress", "glImpact"
+        )
+        SELECT item.id, item.timestamp, item."userId", item."userName", item.action,
+               item.module, item."entityId", item.description, item."ipAddress", item."glImpact"
+        FROM jsonb_to_recordset($1) AS item(
+            id TEXT, timestamp TEXT, "userId" TEXT, "userName" TEXT, action TEXT,
+            module TEXT, "entityId" TEXT, description TEXT, "ipAddress" TEXT, "glImpact" TEXT
+        )
+    $sql$, v_schema)
+    USING COALESCE(p_org_data->'auditTrail', '[]'::JSONB);
+
+    EXECUTE format($sql$
+        INSERT INTO %1$I.migration_batches
+            (id, source_files, row_counts, control_totals, status, imported_by)
+        VALUES ($1, COALESCE($2, '[]'::JSONB), COALESCE($3, '{}'::JSONB),
+                COALESCE($4, '{}'::JSONB), 'completed', auth.uid())
+    $sql$, v_schema)
+    USING v_batch_id,
+          p_org_data->'migrationSourceFiles',
+          p_org_data->'migrationRowCounts',
+          p_org_data->'migrationControlTotals';
+
+    RETURN jsonb_build_object(
+        'success', true,
+        'organization_id', p_org_id,
+        'schema_name', v_schema,
+        'migration_batch_id', v_batch_id
+    );
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.import_legacy_tenant_state(TEXT, JSONB) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.import_legacy_tenant_state(TEXT, JSONB) TO authenticated;
+NOTIFY pgrst, 'reload schema';
 
 REVOKE ALL ON FUNCTION public.provision_org(TEXT, JSONB) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.provision_org(TEXT, JSONB) TO authenticated;

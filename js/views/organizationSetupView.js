@@ -19,6 +19,10 @@ const OrganizationSetupView = {
   },
 
   open() {
+    if (window.Platform?.context?.operationalStatus !== 'ready') {
+      App.showToast('Organization operational setup is blocked until its online write path is deployed.', 'danger');
+      return;
+    }
     const currentUser = store.getCurrentUser();
     const roles = currentUser ? UserManagementEngine.getUserRoles(store.state, currentUser.id) : [];
     const canManage = store.state.isAuthenticated && roles.some(role =>

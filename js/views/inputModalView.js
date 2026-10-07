@@ -151,7 +151,6 @@ const InputModalView = {
               <label class="form-label">Funding Channel</label>
               <select id="inp-member-channel" class="form-control">
                 <option value="Branch FOSA Counter">Branch FOSA Counter</option>
-                <option value="M-Pesa B2C/C2B">M-Pesa Mobile Float</option>
               </select>
             </div>
           </div>
@@ -192,11 +191,6 @@ const InputModalView = {
               <option value="Member Deposit">Member Savings Deposit (Cr 2010 · Liability)</option>
               <option value="Member Withdrawal">Member Cash Withdrawal (Dr 2010 · Liability)</option>
               <option value="Loan Repayment">Loan Principal Repayment (Cr 1200 · Asset)</option>
-              <option value="Share Capital Purchase">Member Share Capital (Cr 3010 · Equity)</option>
-              <option value="Fixed Term Placement">Fixed Term Deposit Placement (Cr 2020 · Liability)</option>
-              <option value="Dividend Distribution">Dividend Distribution (Dr 3030 · Equity / Cr 2010)</option>
-              <option value="Loan Loss Provision">NPA Loan Loss Provision (Dr 5030 · Expense / Cr 1250)</option>
-              <option value="Fee & Service Charge">Account Service Fee Charge (Cr 4030 · Income)</option>
             </select>
           </div>
         </div>
@@ -211,11 +205,13 @@ const InputModalView = {
             <label class="form-label">Delivery Channel</label>
             <select id="inp-tx-channel" class="form-control">
               <option value="Branch FOSA Counter">Branch FOSA Counter (Physical Cash)</option>
-              <option value="M-Pesa B2C/C2B">M-Pesa Mobile Float (Aggregator)</option>
-              <option value="SACCO Agency Banking">SACCO Agency Network Pool</option>
-              <option value="Commercial Bank Transfer">Commercial Bank Direct Wire</option>
             </select>
           </div>
+        </div>
+
+        <div id="tx-loan-field" class="form-group" style="margin:0;display:none;">
+          <label class="form-label">Loan being repaid</label>
+          <select id="inp-tx-loan" class="form-control" disabled></select>
         </div>
 
         <!-- Real-Time GL Impact Preview Box -->
@@ -581,7 +577,7 @@ const InputModalView = {
 
     const journalForm = container.querySelector('#form-gl-journal');
     if (journalForm) {
-      journalForm.addEventListener('submit', event => {
+      journalForm.addEventListener('submit', async event => {
         event.preventDefault();
         const formData = new FormData(journalForm);
         const debitCode = String(formData.get('debitCode') || '');
@@ -595,30 +591,39 @@ const InputModalView = {
           errorEl.style.display = 'block';
           return;
         }
-        const result = store.postTransaction({
-          type: 'Manual GL Journal',
-          amount,
-          channel: 'Treasury Journal',
-          description,
-          legs: [
-            { glCode: debitCode, type: 'Debit', amount },
-            { glCode: creditCode, type: 'Credit', amount }
-          ]
-        });
-        if (!result) {
-          errorEl.textContent = 'Journal was not posted. Check permissions, account codes, and ledger balance controls.';
+        const submitButton = journalForm.querySelector('[type="submit"]');
+        submitButton.disabled = true;
+        journalForm.dataset.idempotencyKey ||= crypto.randomUUID();
+        try {
+          const result = await Platform.postFinancialTransaction({
+            type: 'Manual GL Journal',
+            amount,
+            channel: 'Treasury Journal',
+            description,
+            legs: [
+              { glCode: debitCode, type: 'Debit', amount },
+              { glCode: creditCode, type: 'Credit', amount }
+            ],
+            idempotencyKey: journalForm.dataset.idempotencyKey
+          });
+          delete journalForm.dataset.idempotencyKey;
+          App.showToast(result.refreshError
+            ? `Journal ${result.transaction.id} was accepted by Supabase; refreshed balances could not be loaded: ${result.refreshError.message}`
+            : `Balanced GL journal ${result.transaction.id} posted to Supabase.`, result.refreshError ? 'warning' : 'success');
+          modal.classList.remove('active');
+        } catch (error) {
+          errorEl.textContent = error.message || 'Journal was not accepted by Supabase.';
           errorEl.style.display = 'block';
-          return;
+        } finally {
+          submitButton.disabled = false;
         }
-        App.showToast('Balanced GL journal posted.', 'success');
-        modal.classList.remove('active');
       });
     }
 
     // TAB 0: Member Onboarding Form
     const memberForm = container.querySelector('#form-new-member');
     if (memberForm) {
-      memberForm.addEventListener('submit', (e) => {
+      memberForm.addEventListener('submit', async (e) => {
         e.preventDefault();
         const name = container.querySelector('#inp-member-name')?.value;
         const idNumber = container.querySelector('#inp-member-id')?.value;
@@ -632,61 +637,62 @@ const InputModalView = {
         const deposit = Number(container.querySelector('#inp-member-deposit')?.value) || 0;
         const channel = container.querySelector('#inp-member-channel')?.value || 'Branch FOSA Counter';
 
-        const newId = `MEM-${Math.floor(1000 + Math.random() * 9000)}`;
         const branchObj = state.branches.find(b => b.id === branchId) || state.branches[0];
+        const submitButton = memberForm.querySelector('[type="submit"]');
+        if (deposit > 0 && accType !== 'savings') {
+          App.showToast('Online opening deposits currently support savings accounts only. Create the member without a deposit or post the unsupported account type after its online service is deployed.', 'danger');
+          return;
+        }
+        submitButton.disabled = true;
+        try {
+          const newMember = store.addMember({
+            name,
+            nationalId: idNumber,
+            phone,
+            email,
+            nextOfKin: kin,
+            branchId,
+            branchName: branchObj.name,
+            occupation: occ,
+            employer: emp
+          });
+          const member = await newMember;
 
-        const newMember = {
-          id: newId,
-          name,
-          nationalId: idNumber,
-          phone,
-          email,
-          nextOfKin: kin,
-          branchId,
-          branchName: branchObj.name,
-          accountOpenedDate: new Date().toISOString().slice(0, 10),
-          kycStatus: 'Verified',
-          occupation: occ,
-          employer: emp,
-          riskSegment: 'Low Risk',
-          relationshipScore: 80,
-          savingsBalance: 0,
-          fixedDepositBalance: 0,
-          shareCapital: 0,
-          activeLoans: [],
-          guarantorCommitments: []
-        };
-
-        state.members.push(newMember);
-
-        // If deposit > 0, post via Double-Entry Engine
-        if (deposit > 0) {
-          const cashCode = channel.includes('M-Pesa') ? '1040' : '1010';
-          let creditCode = '2010';
-          let typeLabel = 'Member Deposit';
-          if (accType === 'fixed') {
-            creditCode = '2020';
-            typeLabel = 'Fixed Term Placement';
-          } else if (accType === 'shares') {
-            creditCode = '3010';
-            typeLabel = 'Share Capital Purchase';
+          if (deposit > 0) {
+            const cashCode = '1010';
+            try {
+              memberForm.dataset.idempotencyKey ||= crypto.randomUUID();
+              const posting = await Platform.postFinancialTransaction({
+                type: 'Member Deposit',
+                memberId: member.id,
+                amount: deposit,
+                channel,
+                description: `Opening savings deposit for new member ${name}`,
+                legs: [
+                  { glCode: cashCode, type: 'Debit', amount: deposit },
+                  { glCode: '2010', type: 'Credit', amount: deposit }
+                ],
+                idempotencyKey: memberForm.dataset.idempotencyKey
+              });
+              delete memberForm.dataset.idempotencyKey;
+              App.showToast(posting.refreshError
+                ? `Member ${name} and deposit ${posting.transaction.id} were accepted; refreshed balances could not be loaded: ${posting.refreshError.message}`
+                : `Member ${name} and opening deposit ${posting.transaction.id} were accepted by Supabase.`,
+              posting.refreshError ? 'warning' : 'success');
+              modal.classList.remove('active');
+            } catch (postingError) {
+              App.showToast(`Member ${name} (${member.id}) was created by Supabase, but the opening deposit was rejected: ${postingError.message}. The member remains at zero savings; retry the deposit separately.`, 'danger');
+            }
+            return;
           }
 
-          CoreBankingEngine.executeTransaction(state, {
-            type: typeLabel,
-            memberId: newId,
-            amount: deposit,
-            channel,
-            debitGL: cashCode,
-            creditGL: creditCode,
-            description: `Opening deposit for new member ${name} (${accType})`
-          });
-        } else {
-          store.save();
+          App.showToast(`Member ${name} (${member.id}) was accepted by Supabase.${member.refreshError ? ` Remote balances need refresh: ${member.refreshError.message}` : ''}`, member.refreshError ? 'warning' : 'success');
+          modal.classList.remove('active');
+        } catch (error) {
+          App.showToast(`Member registration failed: ${error.message || 'Unknown error.'}`, 'danger');
+        } finally {
+          submitButton.disabled = false;
         }
-
-        App.showToast(`Member ${name} (${newId}) onboarded successfully!`, 'success');
-        modal.classList.remove('active');
       });
     }
 
@@ -729,8 +735,24 @@ const InputModalView = {
       if (catSelect) catSelect.addEventListener('change', updateGLPreview);
       if (amtInput) amtInput.addEventListener('input', updateGLPreview);
       if (channelSelect) channelSelect.addEventListener('change', updateGLPreview);
+      const txLoanField = container.querySelector('#tx-loan-field');
+      const txLoanSelect = container.querySelector('#inp-tx-loan');
+      const updateLoanSelect = () => {
+        const member = state.members.find(item => item.id === container.querySelector('#inp-tx-member')?.value);
+        const isRepayment = catSelect?.value === 'Loan Repayment';
+        if (txLoanField) txLoanField.style.display = isRepayment ? 'block' : 'none';
+        if (!txLoanSelect) return;
+        txLoanSelect.disabled = !isRepayment || !(member?.activeLoans?.length);
+        txLoanSelect.required = isRepayment;
+        txLoanSelect.innerHTML = member?.activeLoans?.length
+          ? `<option value="">Select a loan</option>${member.activeLoans.map(loan => `<option value="${String(loan.loanId || loan.id).replace(/[&<>"']/g, '')}">${String(loan.product || loan.loanId || loan.id).replace(/[&<>"']/g, '')} · ${Formatter.money(loan.outstandingBalance)}</option>`).join('')}`
+          : '<option value="">No active loan</option>';
+      };
+      catSelect?.addEventListener('change', updateLoanSelect);
+      container.querySelector('#inp-tx-member')?.addEventListener('change', updateLoanSelect);
+      updateLoanSelect();
 
-      txForm.addEventListener('submit', (e) => {
+      txForm.addEventListener('submit', async (e) => {
         e.preventDefault();
         const memberId = container.querySelector('#inp-tx-member')?.value;
         const category = container.querySelector('#inp-tx-category')?.value;
@@ -765,19 +787,37 @@ const InputModalView = {
           creditGL = '4030';
         }
 
-        const res = CoreBankingEngine.executeTransaction(state, {
-          type: category,
-          memberId,
-          amount,
-          channel,
-          debitGL,
-          creditGL,
-          description: desc || `${category} of ${Formatter.money(amount)}`
-        });
-
-        if (res) {
-          App.showToast(`Transaction posted: ${category} of ${Formatter.money(amount)} processed in real-time.`, 'success');
+        const supportedTypes = ['Member Deposit', 'Member Withdrawal', 'Loan Repayment'];
+        if (!supportedTypes.includes(category)) {
+          App.showToast('This transaction type does not yet have a deployed online posting service.', 'danger');
+          return;
+        }
+        const submitButton = txForm.querySelector('[type="submit"]');
+        submitButton.disabled = true;
+        txForm.dataset.idempotencyKey ||= crypto.randomUUID();
+        try {
+          const loanId = category === 'Loan Repayment'
+            ? container.querySelector('#inp-tx-loan')?.value
+            : null;
+          const result = await Platform.postFinancialTransaction({
+            type: category, memberId, loanId, amount, channel,
+            description: desc || `${category} of ${Formatter.money(amount)}`,
+            legs: [
+              { glCode: debitGL, type: 'Debit', amount },
+              { glCode: creditGL, type: 'Credit', amount }
+            ],
+            idempotencyKey: txForm.dataset.idempotencyKey
+          });
+          delete txForm.dataset.idempotencyKey;
+          App.showToast(result.refreshError
+            ? `${result.transaction.id} was accepted by Supabase; refreshed balances could not be loaded: ${result.refreshError.message}`
+            : `Transaction ${result.transaction.id} accepted by Supabase.`,
+          result.refreshError ? 'warning' : 'success');
           modal.classList.remove('active');
+        } catch (error) {
+          App.showToast(error.message || 'Supabase rejected this transaction.', 'danger');
+        } finally {
+          submitButton.disabled = false;
         }
       });
     }
@@ -785,20 +825,18 @@ const InputModalView = {
     // TAB 2: Loan Application Form
     const loanForm = container.querySelector('#form-loan-app');
     if (loanForm) {
-      loanForm.addEventListener('submit', (e) => {
+      loanForm.addEventListener('submit', async (e) => {
         e.preventDefault();
         const memberId = container.querySelector('#inp-loan-member')?.value;
         const productId = container.querySelector('#inp-loan-product')?.value;
-        const product = state.loanProducts.find(item => item.id === productId);
         const amount = Number(container.querySelector('#inp-loan-amount')?.value);
         const term = container.querySelector('#inp-loan-term')?.value;
         const urgency = container.querySelector('#inp-loan-urgency')?.value;
-        const branch = container.querySelector('#inp-loan-branch')?.value;
 
         try {
-          const disbId = store.addLoanApplication({
+          loanForm.dataset.idempotencyKey ||= crypto.randomUUID();
+          const accepted = await store.addLoanApplication({
             memberId,
-            product: product?.name,
             productId,
             amount,
             term,
@@ -807,10 +845,15 @@ const InputModalView = {
             branch,
             guarantorMemberId: container.querySelector('#inp-loan-guarantor')?.value,
             creditScore: 820
-          });
-
-          App.showToast(`Loan application ${disbId} for ${Formatter.money(amount)} originated and routed to Credit Workflow Inbox.`, 'success');
-          modal.classList.remove('active');
+          }, { idempotencyKey: loanForm.dataset.idempotencyKey, notify: false });
+          App.showToast(accepted.refreshError
+            ? `Supabase accepted loan application ${accepted.result.id}; refresh failed: ${accepted.refreshError.message}`
+            : `Supabase accepted loan application ${accepted.result.id}.`, accepted.refreshError ? 'warning' : 'success');
+          if (!accepted.refreshError) {
+            delete loanForm.dataset.idempotencyKey;
+            modal.classList.remove('active');
+          }
+          store.notify();
         } catch (error) {
           App.showToast(error.message || 'Loan application could not be submitted.', 'danger');
         }
@@ -820,23 +863,25 @@ const InputModalView = {
     // TAB 3: DFI Drawdown
     const dfiDrawdownForm = container.querySelector('#form-dfi-drawdown');
     if (dfiDrawdownForm) {
-      dfiDrawdownForm.addEventListener('submit', (e) => {
+      dfiDrawdownForm.addEventListener('submit', async (e) => {
         e.preventDefault();
         const facilityId = container.querySelector('#inp-drawdown-facility')?.value;
         const amount = Number(container.querySelector('#inp-drawdown-amount')?.value);
-        const destinationBankId = container.querySelector('#inp-drawdown-bank')?.value;
-
-        const result = store.recordDFIDrawdown({
-          facilityId,
-          amount,
-          destinationBankId
-        });
-
-        if (result) {
-          App.showToast(`Drawdown of ${Formatter.money(amount)} executed. Bank clearing liquidity increased.`, 'success');
-          modal.classList.remove('active');
-        } else {
-          App.showToast('Drawdown was not posted. Check the available facility balance and GL account mapping.', 'danger');
+        try {
+          dfiDrawdownForm.dataset.idempotencyKey ||= crypto.randomUUID();
+          const outcome = await store.recordDFIDrawdown({ facilityId, amount }, {
+            idempotencyKey: dfiDrawdownForm.dataset.idempotencyKey, notify: false
+          });
+          App.showToast(outcome.refreshError
+            ? `Supabase accepted drawdown ${outcome.result.id}; refresh failed: ${outcome.refreshError.message}`
+            : `Supabase accepted DFI drawdown ${outcome.result.id}.`, outcome.refreshError ? 'warning' : 'success');
+          if (!outcome.refreshError) {
+            delete dfiDrawdownForm.dataset.idempotencyKey;
+            modal.classList.remove('active');
+          }
+          store.notify();
+        } catch (error) {
+          App.showToast(`Drawdown rejected: ${error.message}`, 'danger');
         }
       });
     }
@@ -844,7 +889,7 @@ const InputModalView = {
     // TAB 3: New Facility
     const newFacilityForm = container.querySelector('#form-new-facility');
     if (newFacilityForm) {
-      newFacilityForm.addEventListener('submit', (e) => {
+      newFacilityForm.addEventListener('submit', async (e) => {
         e.preventDefault();
         const lender = container.querySelector('#inp-fac-lender')?.value;
         const facilityType = container.querySelector('#inp-fac-type')?.value;
@@ -852,37 +897,51 @@ const InputModalView = {
         const interestRate = Number(container.querySelector('#inp-fac-rate')?.value);
         const firstRepaymentDate = container.querySelector('#inp-fac-date')?.value;
 
-        store.addExternalFacility({
+        try {
+        newFacilityForm.dataset.idempotencyKey ||= crypto.randomUUID();
+        const result = await store.addExternalFacility({
           lender,
           facilityType,
           commitment,
           interestRate,
           firstRepaymentDate,
           repaymentAmount: commitment * 0.05
-        });
-
-        App.showToast(`New facility with ${lender} (${Formatter.money(commitment)}) registered.`, 'success');
-        modal.classList.remove('active');
+        }, { idempotencyKey: newFacilityForm.dataset.idempotencyKey, notify: false });
+        App.showToast(result.refreshError ? `Supabase registered facility ${result.result.id}; refresh failed: ${result.refreshError.message}` : `Supabase registered facility ${result.result.id}.`, result.refreshError ? 'warning' : 'success');
+        if (!result.refreshError) {
+          delete newFacilityForm.dataset.idempotencyKey;
+          modal.classList.remove('active');
+        }
+        store.notify();
+        } catch (error) {
+          App.showToast(`Facility registration rejected: ${error.message}`, 'danger');
+        }
       });
     }
 
     // TAB 4: OpEx Form
     const opexForm = container.querySelector('#form-add-opex');
     if (opexForm) {
-      opexForm.addEventListener('submit', (e) => {
+      opexForm.addEventListener('submit', async (e) => {
         e.preventDefault();
         const category = container.querySelector('#inp-opex-cat')?.value;
         const amount = Number(container.querySelector('#inp-opex-amount')?.value);
         const dueDay = Number(container.querySelector('#inp-opex-day')?.value);
 
-        store.addOperatingExpense({
-          category,
-          amount,
-          dueDay
-        });
-
-        App.showToast(`OpEx line "${category}" (${Formatter.money(amount)}/mo) added to cash forecast.`, 'success');
-        modal.classList.remove('active');
+        try {
+          opexForm.dataset.idempotencyKey ||= crypto.randomUUID();
+          const result = await store.addOperatingExpense({ category, amount, dueDay }, {
+            idempotencyKey: opexForm.dataset.idempotencyKey, notify: false
+          });
+          App.showToast(result.refreshError ? `Supabase added expense schedule ${result.result.id}; refresh failed: ${result.refreshError.message}` : `Supabase added expense schedule ${result.result.id}.`, result.refreshError ? 'warning' : 'success');
+          if (!result.refreshError) {
+            delete opexForm.dataset.idempotencyKey;
+            modal.classList.remove('active');
+          }
+          store.notify();
+        } catch (error) {
+          App.showToast(`Operating expense schedule rejected: ${error.message}`, 'danger');
+        }
       });
     }
 
@@ -890,7 +949,7 @@ const InputModalView = {
     const bulkTextarea = container.querySelector('#inp-bulk-csv');
     const processBulkBtn = container.querySelector('#btn-process-bulk-csv');
     if (processBulkBtn && bulkTextarea) {
-      processBulkBtn.addEventListener('click', () => {
+      processBulkBtn.addEventListener('click', async () => {
         const text = bulkTextarea.value.trim();
         if (!text) {
           alert('Please enter or load CSV lines first.');
@@ -913,15 +972,17 @@ const InputModalView = {
         });
 
         if (txList.length > 0) {
-          const count = store.ingestBatchTransactions(txList);
-          App.showToast(`Batch Ingestion Complete: ${count} transactions posted to GL with zero-batch delay.`, 'success');
-          modal.classList.remove('active');
+          App.showToast('Batch ingestion is disabled until a dedicated atomic, per-row server import RPC is deployed. No rows were posted.', 'danger');
         }
       });
     }
   },
 
   open(tab = null) {
+    if (window.Platform?.context?.operationalStatus !== 'ready') {
+      App.showToast('Online operational write services are not enabled for this organization.', 'danger');
+      return;
+    }
     if (!App.canOpenInputHub()) {
       App.showToast('You do not have permission to use the Input Hub.', 'danger');
       return;

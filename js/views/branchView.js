@@ -464,83 +464,78 @@ const BranchView = {
 
     container.querySelectorAll('.denom-input').forEach(inp => inp.addEventListener('input', updateDenomTotal));
 
-    container.querySelector('#btn-save-vault-count')?.addEventListener('click', () => {
+    container.querySelector('#btn-save-vault-count')?.addEventListener('click', async event => {
       const total = updateDenomTotal();
-      currentBranch.cashInVault = total;
-      store.submitBranchReconciliation(currentBranch.id, total, null, 'Vault Denomination Verification');
-      store.save();
-      App.showToast(`Vault count of ${Formatter.money(total)} confirmed for ${currentBranch.name}.`, 'success');
+      const button = event.currentTarget;
+      button.disabled = true;
+      try {
+        const result = await store.submitBranchReconciliation(currentBranch.id, total, null, 'Vault Denomination Verification', {
+          idempotencyKey: button.dataset.idempotencyKey ||= crypto.randomUUID(), notify: false
+        });
+        App.showToast(result.refreshError ? `Supabase accepted vault count; refresh failed: ${result.refreshError.message}` : `Supabase accepted vault count for ${currentBranch.name}.`, result.refreshError ? 'warning' : 'success');
+        store.notify();
+      } catch (error) {
+        button.disabled = false;
+        App.showToast(`Vault reconciliation rejected: ${error.message}`, 'danger');
+      }
     });
 
-    container.querySelector('#btn-submit-eod-reconciliation')?.addEventListener('click', () => {
+    container.querySelector('#btn-submit-eod-reconciliation')?.addEventListener('click', async event => {
       const total = updateDenomTotal();
-      currentBranch.cashInVault = total;
-      store.submitBranchReconciliation(currentBranch.id, total, null, 'EOD Complete Submission');
-      store.save();
-      App.showToast(`EOD Cash Position for ${currentBranch.name} transmitted to Central Treasury.`, 'success');
+      const button = event.currentTarget;
+      button.disabled = true;
+      try {
+        const result = await store.submitBranchReconciliation(currentBranch.id, total, null, 'EOD Complete Submission', {
+          idempotencyKey: button.dataset.idempotencyKey ||= crypto.randomUUID(), notify: false
+        });
+        App.showToast(result.refreshError ? `Supabase accepted EOD vault count; refresh failed: ${result.refreshError.message}` : `Supabase accepted EOD vault reconciliation for ${currentBranch.name}.`, result.refreshError ? 'warning' : 'success');
+        store.notify();
+      } catch (error) {
+        button.disabled = false;
+        App.showToast(`EOD reconciliation rejected: ${error.message}`, 'danger');
+      }
     });
 
     // --- Approval Queue ---
     container.querySelectorAll('.btn-approve-wf').forEach(btn => {
-      btn.addEventListener('click', () => {
+      btn.addEventListener('click', async () => {
         const wfId = btn.dataset.id;
         const wf = state.workflowTasks.find(t => t.id === wfId);
         if (!wf) return;
 
-        wf.makerCheckerStatus = 'Approved — Branch Manager';
-        wf.history = wf.history || [];
-        wf.history.push({
-          step: 'Branch Manager Authorization',
-          user: store.getCurrentUser()?.name || 'Branch Manager',
-          action: 'Approved',
-          timestamp: new Date().toISOString()
+        const result = await WorkflowEngine.processTask(wfId, 'Approve', 'Branch', '', {
+          idempotencyKey: btn.dataset.idempotencyKey ||= crypto.randomUUID(), notify: false
         });
-        store.saveQuiet();
-        App.showToast(`✓ ${wf.type} (${Formatter.money(wf.amount)}) approved. Teller may proceed.`, 'success');
-
-        // Remove row from queue visually
-        const row = btn.closest('tr');
-        const detailRow = row?.nextElementSibling;
-        row?.remove();
-        detailRow?.remove();
-
-        // Update badge count
-        const badge = container.querySelector('.panel-header .badge');
-        if (badge) {
-          const remaining = container.querySelectorAll('.btn-approve-wf').length;
-          badge.textContent = `${remaining} Pending`;
-          badge.className = `badge ${remaining > 0 ? 'badge-rose' : 'badge-emerald'}`;
+        if (result?.success) {
+          App.showToast(result.refreshError ? `Supabase accepted approval; refresh failed: ${result.refreshError.message}` : `Supabase approved ${wf.type}.`, result.refreshError ? 'warning' : 'success');
+          store.notify();
+        } else {
+          App.showToast(result?.error || 'This workflow type is not enabled for online approval.', 'danger');
         }
       });
     });
 
     container.querySelectorAll('.btn-reject-wf').forEach(btn => {
-      btn.addEventListener('click', () => {
+      btn.addEventListener('click', async () => {
         const wfId = btn.dataset.id;
         const wf = state.workflowTasks.find(t => t.id === wfId);
         if (!wf) return;
 
-        wf.makerCheckerStatus = 'Rejected — Branch Manager';
-        wf.history = wf.history || [];
-        wf.history.push({
-          step: 'Branch Manager Authorization',
-          user: store.getCurrentUser()?.name || 'Branch Manager',
-          action: 'Rejected',
-          timestamp: new Date().toISOString()
+        const result = await WorkflowEngine.processTask(wfId, 'Reject', 'Branch', 'Branch review rejection', {
+          idempotencyKey: btn.dataset.idempotencyKey ||= crypto.randomUUID(), notify: false
         });
-        store.saveQuiet();
-        App.showToast(`✗ ${wf.type} rejected. Teller notified.`, 'warning');
-
-        const row = btn.closest('tr');
-        const detailRow = row?.nextElementSibling;
-        row?.remove();
-        detailRow?.remove();
+        if (result?.success) {
+          App.showToast(result.refreshError ? `Supabase accepted rejection; refresh failed: ${result.refreshError.message}` : `Supabase rejected ${wf.type}.`, result.refreshError ? 'warning' : 'info');
+          store.notify();
+        } else {
+          App.showToast(result?.error || 'This workflow type is not enabled for online rejection.', 'danger');
+        }
       });
     });
 
     // --- Till float count update ---
     container.querySelectorAll('.btn-edit-teller-trigger').forEach(btn => {
-      btn.addEventListener('click', () => {
+      btn.addEventListener('click', async () => {
         const idx = btn.dataset.idx;
         btn.style.display = 'none';
         container.querySelector('#teller-edit-' + idx).style.display = 'flex';
@@ -556,28 +551,23 @@ const BranchView = {
     });
 
     container.querySelectorAll('.btn-save-teller').forEach(btn => {
-      btn.addEventListener('click', () => {
+      btn.addEventListener('click', async () => {
         const idx = parseInt(btn.dataset.idx);
         const newBalance = Number(container.querySelector('#teller-input-' + idx).value);
         if (isNaN(newBalance) || newBalance < 0) {
           App.showToast('Enter a valid non-negative balance.', 'warning');
           return;
         }
-        currentBranch.tillBalances[idx].balance = newBalance;
-        currentBranch.tillBalances[idx].status = 'Reconciled';
-        store.save();
-        App.showToast(`Till updated for ${currentBranch.tillBalances[idx].tellerName}.`, 'success');
-
-        const editGroup = container.querySelector('#teller-edit-' + idx);
-        const trigger = container.querySelector('#teller-trigger-' + idx);
-        if (editGroup) editGroup.style.display = 'none';
-        if (trigger) trigger.style.display = 'inline-block';
-
-        const row = trigger?.closest('tr');
-        if (row) {
-          const cells = row.querySelectorAll('td');
-          if (cells[1]) cells[1].textContent = Formatter.money(newBalance);
-          if (cells[2]) cells[2].innerHTML = `<span class="badge badge-emerald">Reconciled</span>`;
+        btn.disabled = true;
+        try {
+          const result = await store.reconcileAssignedTill(newBalance, {
+            idempotencyKey: btn.dataset.idempotencyKey ||= crypto.randomUUID(), notify: false
+          });
+          App.showToast(result.refreshError ? `Supabase accepted till reconciliation; refresh failed: ${result.refreshError.message}` : 'Supabase reconciled the assigned till.', result.refreshError ? 'warning' : 'success');
+          store.notify();
+        } catch (error) {
+          btn.disabled = false;
+          App.showToast(`Till reconciliation rejected: ${error.message}`, 'danger');
         }
       });
     });
@@ -651,79 +641,70 @@ const BranchView = {
       finalBtn.style.cursor = e.target.checked ? 'pointer' : 'not-allowed';
     });
 
-    finalBtn?.addEventListener('click', () => {
+    finalBtn?.addEventListener('click', async () => {
       const name = container.querySelector('#new-member-name').value.trim();
       const id = container.querySelector('#new-member-id').value.trim();
       const phone = container.querySelector('#new-member-phone').value.trim();
       const kin = container.querySelector('#new-member-kin').value.trim();
       const accType = accTypeSelect.value;
       const deposit = Number(container.querySelector('#new-member-deposit').value) || 0;
+      if (accType === 'loan') {
+        App.showToast('A loan account cannot be opened during member registration. Submit an application through the Credit workflow.', 'danger');
+        return;
+      }
+      if (deposit > 0 && accType !== 'savings') {
+        App.showToast('Online opening deposits currently support savings accounts only.', 'danger');
+        return;
+      }
+      finalBtn.disabled = true;
+      const originalLabel = finalBtn.textContent;
+      finalBtn.textContent = 'Waiting for Supabase…';
 
-      const newMember = {
-        id: `MEM-${Math.floor(2000 + Math.random() * 7000)}`,
-        name, nationalId: id, phone,
-        nextOfKin: kin,
-        branchId: currentBranch.id,
-        branchName: currentBranch.name,
-        kycStatus: 'Verified',
-        riskSegment: 'Standard Member',
-        relationshipScore: accType === 'savings' ? 80 : 70,
-        occupation: 'Not Specified',
-        employer: 'Not Specified',
-        savingsBalance: 0,
-        fixedDepositBalance: 0,
-        shareCapital: 0,
-        activeLoans: [],
-        guarantorCommitments: []
-      };
-
-      state.members.push(newMember);
-
-      if ((accType === 'savings' || accType === 'fixed' || accType === 'shares') && deposit > 0) {
-        let debitGL = '1010';
-        let creditGL = '2010';
-        let typeName = 'Member Deposit';
-
-        if (accType === 'fixed') {
-          creditGL = '2020';
-          typeName = 'Fixed Term Placement';
-        } else if (accType === 'shares') {
-          creditGL = '3010';
-          typeName = 'Share Capital Purchase';
-        }
-
-        CoreBankingEngine.executeTransaction(state, {
-          type: typeName,
-          memberId: newMember.id,
-          amount: deposit,
-          channel: 'Branch FOSA Counter',
-          debitGL,
-          creditGL,
-          description: `Opening ${accType} deposit for ${name} at ${currentBranch.name}`
+      let newMember;
+      try {
+        newMember = await store.addMember({
+          name,
+          nationalId: id,
+          phone,
+          nextOfKin: kin,
+          branchId: currentBranch.id,
+          branchName: currentBranch.name
         });
-
-        App.showToast(`Account established for ${name}. Opening deposit of ${Formatter.money(deposit)} posted to GL (Dr ${debitGL} / Cr ${creditGL}).`, 'success');
-      } else if (accType === 'loan') {
-        const loanAmt = Number(container.querySelector('#new-loan-amount')?.value) || 0;
-        const purpose = container.querySelector('#new-loan-purpose')?.value || 'Working Capital';
-        newMember.activeLoans.push({
-          loanId: `LN-${Math.floor(6000 + Math.random() * 3000)}`,
-          product: 'Asset / Working Capital Facility',
-          purpose,
-          principal: loanAmt,
-          outstandingBalance: loanAmt,
-          monthlyInstallment: Math.round(loanAmt / 12),
-          interestRate: 14.5,
-          npaClassification: 'Normal (Performing)',
-          daysInArrears: 0,
-          nextDueDate: new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10)
-        });
-        App.showToast(`Loan account established for ${name} (${Formatter.money(loanAmt)}). Credit team will complete disbursement.`, 'success');
-      } else {
-        App.showToast(`Account successfully opened for ${newMember.name} (${newMember.id}).`, 'success');
+      } catch (error) {
+        App.showToast(`Member registration failed: ${error.message || 'Unknown error.'}`, 'danger');
+        finalBtn.disabled = false;
+        finalBtn.textContent = originalLabel;
+        return;
       }
 
-      store.save();
+      if ((accType === 'savings' || accType === 'fixed' || accType === 'shares') && deposit > 0) {
+        try {
+          const posting = await Platform.postFinancialTransaction({
+            type: 'Member Deposit',
+            memberId: newMember.id,
+            amount: deposit,
+            channel: 'Branch FOSA Counter',
+            description: `Opening savings deposit for ${name} at ${currentBranch.name}`,
+            legs: [
+              { glCode: '1010', type: 'Debit', amount: deposit },
+              { glCode: '2010', type: 'Credit', amount: deposit }
+            ]
+          });
+          App.showToast(posting.refreshError
+            ? `Supabase accepted the member and deposit; refreshed balances could not be loaded: ${posting.refreshError.message}`
+            : `Member ${name} and opening deposit ${posting.transaction.id} accepted by Supabase.`,
+          posting.refreshError ? 'warning' : 'success');
+        } catch (error) {
+          App.showToast(`Member ${name} (${newMember.id}) was created by Supabase, but the deposit was rejected: ${error.message}. The account remains at zero savings.`, 'danger');
+        }
+      } else if (newMember.refreshError) {
+        App.showToast(`Member ${name} (${newMember.id}) was accepted by Supabase; refresh failed: ${newMember.refreshError.message}`, 'warning');
+      } else {
+        App.showToast(`Member ${newMember.name} (${newMember.id}) was accepted by Supabase.`, 'success');
+      }
+
+      finalBtn.disabled = false;
+      finalBtn.textContent = originalLabel;
     });
   }
 };

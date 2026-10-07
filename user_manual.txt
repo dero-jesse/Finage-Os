@@ -42,7 +42,7 @@ Post a member transaction
 
 The transaction screen provides configured types such as member deposit, withdrawal, loan repayment, share capital purchase, fixed-term placement, dividend distribution, loan-loss provision, and service fee. Only use a type when it matches the underlying transaction. A transaction is rejected if required accounts or permissions are missing.
 
-Cash counter transactions may require an assigned teller till, sufficient drawer cash for a withdrawal, and compliance with approval limits. If a post is rejected, do not retry with a different amount or channel just to bypass the control; ask the supervisor to review the rejection.
+In the Teller portal, select the currency and transaction, then enter the number of notes/coins for each denomination. The target amount is calculated from those counts and updates automatically; it is not manually editable. Check the physical total and confirmation amount before posting. Cash counter transactions may require an assigned teller till, sufficient drawer cash for a withdrawal, and compliance with approval limits. If a post is rejected, do not retry with a different amount or channel just to bypass the control; ask the supervisor to review the rejection.
 
 Register a member
 1. Open Actions > Input Hub > New Member.

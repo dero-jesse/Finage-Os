@@ -350,8 +350,9 @@ const TellerDeskView = {
                   </div>
 
                   <div class="form-group" style="margin: 0;">
-                    <label class="form-label">Target Amount</label>
-                    <input type="number" id="teller-tx-amount" class="form-control" placeholder="0.00" value="0" min="1" style="font-size: 1.1rem; font-family: var(--font-mono); font-weight: 700;">
+                    <label class="form-label" for="teller-tx-amount">Target Amount (calculated from cash count)</label>
+                    <input type="number" id="teller-tx-amount" class="form-control" placeholder="0" value="0" min="0" step="1" readonly aria-describedby="teller-amount-help" style="font-size: 1.1rem; font-family: var(--font-mono); font-weight: 700;">
+                    <small id="teller-amount-help" style="color:var(--text-muted);">Enter the number of notes/coins below. The transaction amount updates automatically.</small>
                   </div>
                 </div>
 
@@ -477,10 +478,31 @@ const TellerDeskView = {
       denomGridContainer.innerHTML = currency.denoms.map(d => `
         <div class="denom-box">
           <span class="denom-val">${currency.symbol} ${d.toLocaleString()}</span>
-          <input type="number" data-denom="${d}" class="form-control tx-denom" value="0" min="0">
+          <input type="number" data-denom="${d}" class="form-control tx-denom" value="0" min="0" step="1" inputmode="numeric" aria-label="Count of ${currency.code || currencySelect.value} ${d} notes or coins">
         </div>
       `).join('');
-      container.querySelectorAll('.tx-denom').forEach(inp => inp.addEventListener('input', validateTransaction));
+      container.querySelectorAll('.tx-denom').forEach(inp => inp.addEventListener('input', syncTargetAmountFromCashCount));
+      syncTargetAmountFromCashCount();
+    };
+
+    const getCashCount = () => {
+      let total = 0;
+      let valid = true;
+      container.querySelectorAll('.tx-denom').forEach(inp => {
+        const rawCount = inp.value.trim();
+        const count = rawCount === '' ? 0 : Number(rawCount);
+        if (!Number.isSafeInteger(count) || count < 0) {
+          valid = false;
+          return;
+        }
+        total += Number(inp.dataset.denom) * count;
+      });
+      return { total, valid: valid && Number.isSafeInteger(total) };
+    };
+
+    const syncTargetAmountFromCashCount = () => {
+      const cashCount = getCashCount();
+      txAmountInput.value = cashCount.valid ? String(cashCount.total) : '';
       validateTransaction();
     };
 
@@ -492,14 +514,12 @@ const TellerDeskView = {
       const loanIdx     = parseInt(container.querySelector('#teller-loan-select')?.value);
       const selectedLoan = !isNaN(loanIdx) ? activeLoans[loanIdx] : activeLoans[0];
 
+      const cashCount = getCashCount();
+      if (!cashCount.valid) return 'Denomination counts must be whole, non-negative numbers.';
       if (targetAmt <= 0) return 'Enter a target amount greater than zero.';
 
       // Denomination physical count must match exactly
-      let calcTotal = 0;
-      container.querySelectorAll('.tx-denom').forEach(inp => {
-        calcTotal += (Number(inp.dataset.denom) * (parseInt(inp.value) || 0));
-      });
-      if (targetAmt !== calcTotal) return 'Calculated denomination total must exactly match the Target Amount.';
+      if (targetAmt !== cashCount.total) return 'The transaction amount must match the denomination total.';
 
       if (txType === 'Withdrawal') {
         if (profile.savingsBalance < targetAmt)
@@ -527,15 +547,13 @@ const TellerDeskView = {
 
     const validateTransaction = () => {
       const currency = CURRENCIES[currencySelect.value] || CURRENCIES.UGX;
-      let calcTotal = 0;
-      container.querySelectorAll('.tx-denom').forEach(inp => {
-        calcTotal += (Number(inp.dataset.denom) * (parseInt(inp.value) || 0));
-      });
+      const cashCount = getCashCount();
+      const calcTotal = cashCount.total;
 
       const targetAmt = Number(txAmountInput.value) || 0;
       const issue = getTransactionIssue();
 
-      calculatedTotalEl.textContent = currency.symbol + ' ' + calcTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      calculatedTotalEl.textContent = currency.symbol + ' ' + calcTotal.toLocaleString();
 
       if (!issue) {
         postBtn.disabled = false;
@@ -608,9 +626,6 @@ const TellerDeskView = {
 
     // --- Wire up currency change ---
     currencySelect.addEventListener('change', renderDenominations);
-
-    // --- Wire up amount field ---
-    txAmountInput.addEventListener('input', validateTransaction);
 
     // --- Initial denomination render ---
     renderDenominations();

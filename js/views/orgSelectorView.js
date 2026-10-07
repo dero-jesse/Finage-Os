@@ -205,10 +205,6 @@ const OrgSelectorView = {
       card.addEventListener('click', () => {
         const orgId = card.dataset.orgId;
         if (window.Platform && Platform.setActiveOrg(orgId)) {
-          // Trigger a sync pull for this org then re-render the main app
-          if (window.SupabaseSync && typeof SupabaseSync.init === 'function') {
-            SupabaseSync.init(store).catch(e => console.warn('[OrgSelector] sync error:', e));
-          }
           store.state.orgSelectorShown = false;
           store.saveLocal();
           if (App && App.showToast) App.showToast('Switched to: ' + Platform.getActiveOrg().name, 'success');

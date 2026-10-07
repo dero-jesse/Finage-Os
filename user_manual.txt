@@ -5,7 +5,7 @@ Purpose
 -------
 This guide explains the main screens and the everyday tasks available in Finage OS. Your organization, assigned role, permissions, and enabled services determine which screens and actions you can use. Screen labels may vary slightly by version.
 
-Finage OS can run with demo/local data or with an organization connected to Supabase. Before entering real operational information, confirm that you are signed in to the correct organization and that your administrator has confirmed the environment is configured for production use.
+Operational records are saved in this browser's local storage and are not automatically synchronized between devices or browsers. Supabase is still used for sign-in and organization administration. Keep this browser's data available, and export or back up records as required by your organization's procedures. Before entering real operational information, confirm that you are signed in to the correct organization and that your administrator has confirmed the environment is configured for production use.
 
 1. SIGN IN AND SELECT AN ORGANIZATION
 -------------------------------------
@@ -102,9 +102,9 @@ The journal requires equal debit and credit amounts, two different valid account
 6. TREASURY AND LEDGER CHECKS
 -----------------------------
 - Open the Treasury workspace to review liquidity, the accounting check, and the General Ledger snapshot.
-- Use the chart filters to display assets, liabilities, equity, income, or expenses. The All filter displays the full chart.
+- Review the full General Ledger trial balance and all accounts directly in the Treasury workspace, including debit and credit totals and variance. Use the chart filters to display assets, liabilities, equity, income, or expenses; the All filter displays the full chart. CSV export is optional.
 - Select Verify Ledger to run a trial-balance/accounting-equation check. Review any flagged variance before further posting and notify the finance supervisor.
-- Select Trial Balance or Balance Sheet to export the relevant report.
+- Select Trial Balance or Balance Sheet to export a copy of the relevant report if needed.
 - Use the Input Hub's DFI tab to register a facility or record a drawdown. A drawdown posts using the configured bank and DFI liability accounts; verify the facility availability and destination bank before submission.
 
 7. ORGANIZATION SETUP AND MIGRATION

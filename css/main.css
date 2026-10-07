@@ -289,12 +289,6 @@ html, body {
   border-color: var(--border-medium);
 }
 
-.sync-badge {
-  background: rgba(15, 118, 110, 0.08);
-  border-color: rgba(15, 118, 110, 0.18);
-  color: var(--accent-green-dark);
-}
-
 /* Portal Drawer System */
 /* Drawer Overlay */
 .drawer-overlay {
@@ -620,6 +614,7 @@ html, body {
 .workspace-card--wide { grid-column: span 8; }
 .workspace-card--side { grid-column: span 4; }
 .workspace-card--half { grid-column: span 6; }
+.workspace-card--full { grid-column: span 12; }
 
 .workspace-card-header {
   display: flex;
@@ -745,6 +740,12 @@ html, body {
 
 .mini-table td {
   color: var(--text-main);
+}
+
+.mini-table tfoot td {
+  background: #f7faff;
+  border-top: 1px solid rgba(148,163,184,0.24);
+  font-weight: 800;
 }
 
 .solid-note {

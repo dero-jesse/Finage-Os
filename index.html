@@ -75,10 +75,6 @@
 
       <div class="header-actions">
         <button id="btn-global-alerts" class="header-btn ghost-btn" type="button" aria-label="System alerts">Alerts</button>
-        <button id="sync-status-badge" class="header-btn sync-badge" title="Database Sync Protocol: Local cache synced with Supabase (Click to pull/push immediately)" type="button">
-          Synced
-        </button>
-
         <div id="active-user-badge" class="active-user-badge" title="Current active operator context">
           <!-- Populated dynamically -->
         </div>
@@ -145,8 +141,6 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="js/supabaseClient.js"></script>
   <script src="js/store.js"></script>
-  <script src="js/sync/supabaseSync.js"></script>
-
   <!-- Core Engines (Layers 0, 0.5, 1, 2, 3, 4, 5, 7) -->
   <script src="js/engine/coreBankingEngine.js"></script>
 

@@ -809,9 +809,6 @@ const SetupWizardView = {
 
       this._provisionedSchema = result.schemaName;
       this._invitationResults = result.invitations;
-      if (window.SupabaseSync && typeof SupabaseSync.init === 'function') {
-        await SupabaseSync.init(store);
-      }
       if (App && App.showToast) App.showToast('Organisation "' + this._data.org.name + '" provisioned successfully!', 'success');
       // Re-render step 5 to show the success state + SQL preview
       this._render();

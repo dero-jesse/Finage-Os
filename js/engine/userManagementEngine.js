@@ -19,6 +19,32 @@ const UserManagementEngine = {
     return user.roles.map(roleId => this.getRoleById(state, roleId)).filter(Boolean);
   },
 
+  async loadTenantUser(state, email) {
+    const schemaName = window.Platform?.context?.currentOrgSchema;
+    if (!window.supabase || !schemaName) return null;
+
+    const { data: user, error: userError } = await window.supabase
+      .schema(schemaName)
+      .from('users')
+      .select('*')
+      .ilike('email', email)
+      .maybeSingle();
+    if (userError) throw userError;
+    if (!user) return null;
+
+    const { data: roles, error: rolesError } = await window.supabase
+      .schema(schemaName)
+      .from('roles')
+      .select('*');
+    if (rolesError) throw rolesError;
+
+    state.roles = roles || [];
+    const userIndex = state.users.findIndex(existing => existing.id === user.id);
+    if (userIndex === -1) state.users.push(user);
+    else state.users[userIndex] = user;
+    return user;
+  },
+
   /**
    * Authenticate a user — tries Supabase Auth first, falls back to local email lookup.
    * Returns { success, error } so callers can await it.
@@ -62,9 +88,8 @@ const UserManagementEngine = {
           return { success: true };
         }
 
-        if (window.SupabaseSync && window.Platform?.context?.currentOrgSchema) {
-          await window.SupabaseSync.init(window.store);
-          systemUser = state.users.find(u => u.email.toLowerCase() === normalizedEmail);
+        if (!systemUser || systemUser.status !== 'Active') {
+          systemUser = await this.loadTenantUser(state, normalizedEmail);
         }
         if (!systemUser || systemUser.status !== 'Active') {
           await window.supabase.auth.signOut();
@@ -124,12 +149,9 @@ const UserManagementEngine = {
     if (error) return { success: false, error: error.message };
 
     if (window.Platform) await window.Platform.init();
-    if (window.SupabaseSync && window.Platform?.context?.currentOrgSchema) {
-      await window.SupabaseSync.init(window.store);
-    }
-
     const email = current.user.email?.toLowerCase();
-    const systemUser = email && state.users.find(user => user.email.toLowerCase() === email && user.status === 'Active');
+    let systemUser = email && state.users.find(user => user.email.toLowerCase() === email && user.status === 'Active');
+    if (!systemUser && email) systemUser = await this.loadTenantUser(state, email);
     if (!systemUser) {
       await window.supabase.auth.signOut();
       state.isAuthenticated = false;
@@ -166,11 +188,9 @@ const UserManagementEngine = {
       this._applyLogin(state, systemUser);
       state.orgSelectorShown = true;
     } else {
-      if (window.SupabaseSync && window.Platform?.context?.currentOrgSchema) {
-        await window.SupabaseSync.init(window.store);
-      }
       const email = authUser.email?.toLowerCase();
-      const systemUser = email && state.users.find(user => user.email.toLowerCase() === email && user.status === 'Active');
+      let systemUser = email && state.users.find(user => user.email.toLowerCase() === email && user.status === 'Active');
+      if (!systemUser && email) systemUser = await this.loadTenantUser(state, email);
       if (!systemUser) {
         await window.supabase.auth.signOut();
         return { success: false, error: 'Email verified, but no active organization user is linked to this address.' };

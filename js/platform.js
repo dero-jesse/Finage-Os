@@ -116,6 +116,15 @@ const Platform = {
       throw new Error('Organization was provisioned but could not be loaded into the platform registry.');
     }
     this.setActiveOrg(formData.id);
+    if (window.store?.state) {
+      const state = window.store.state;
+      state.branches = formData.branches || [];
+      state.members = formData.members || [];
+      state.generalLedger = formData.glAccounts || [];
+      state.transactions = formData.transactions || [];
+      state.recentTransactions = formData.transactions || [];
+      window.store.saveLocal();
+    }
 
     return {
       success: true,
@@ -162,8 +171,57 @@ const Platform = {
       throw new Error(detail);
     }
     if (!data?.success) throw new Error(data?.error || 'User setup did not complete.');
-    if (window.SupabaseSync) await window.SupabaseSync.init(window.store);
     return data;
+  },
+
+  async applyTenantSetup(organization, importData, setupCompleted = true) {
+    if (!window.supabase || !this.context.currentOrgSchema || !this.context.currentOrgId) {
+      throw new Error('Select an organization and connect to Supabase before saving setup.');
+    }
+
+    const payload = {
+      ...organization,
+      branches: importData.branches || [],
+      glAccounts: importData.glAccounts || [],
+      members: importData.members || [],
+      transactions: importData.transactions || [],
+      openingBalances: importData.openingBalances || [],
+      migrationBatchId: importData.migrationBatchId || null,
+      migrationSourceFiles: importData.migrationSourceFiles || importData.sourceFiles || [],
+      migrationRowCounts: importData.migrationRowCounts || {},
+      migrationControlTotals: importData.migrationControlTotals || {},
+      migrationRecords: importData.migrationRecords || []
+    };
+    const { data: updatedOrg, error } = await window.supabase.rpc('apply_tenant_setup', {
+      p_org_id: this.context.currentOrgId,
+      p_org_data: payload,
+      p_setup_completed: setupCompleted
+    });
+    if (error) throw new Error(`Could not save organization setup: ${error.message}`);
+    if (!updatedOrg) throw new Error('Organization setup was not saved.');
+
+    this.context.currentOrg = updatedOrg;
+    this.context.organizations = this.context.organizations.map(org =>
+      org.id === updatedOrg.id ? updatedOrg : org
+    );
+
+    const state = window.store?.state;
+    if (state) {
+      state.institution.name = updatedOrg.name;
+      state.institution.type = updatedOrg.type;
+      state.institution.baseCurrency = updatedOrg.base_currency || 'UGX';
+      state.institution.financialYear = updatedOrg.financial_year || '2026';
+      state.institution.regulatoryBody = updatedOrg.regulatory_body || '';
+      state.institution.regulatoryMinLiquidityRatio = Number(updatedOrg.min_liquidity_ratio) || 15;
+      state.institution.setupCompleted = updatedOrg.setup_completed !== false;
+      state.branches = importData.branches || state.branches;
+      state.members = importData.members || state.members;
+      state.transactions = importData.transactions || state.transactions;
+      state.recentTransactions = importData.transactions || state.recentTransactions;
+      state.generalLedger = importData.glAccounts || state.generalLedger;
+      window.store.saveLocal();
+    }
+    return updatedOrg;
   },
 
   getOrganizations() { return this.context.organizations; },

@@ -37,10 +37,10 @@ const TreasuryView = {
               Verify Ledger
             </button>
             <button id="btn-export-trial-balance" class="btn btn-secondary btn-sm">
-              Trial Balance
+              Export Trial Balance CSV
             </button>
             <button id="btn-export-balance-sheet" class="btn btn-primary btn-sm">
-              Balance Sheet
+              Export Balance Sheet CSV
             </button>
           </div>
         </div>
@@ -129,9 +129,12 @@ const TreasuryView = {
         </div>
 
         <div class="workspace-grid">
-          <section class="workspace-card workspace-card--wide">
+          <section class="workspace-card workspace-card--full">
             <div class="workspace-card-header">
-              <div class="workspace-card-title">General ledger snapshot</div>
+              <div>
+                <div class="workspace-card-title">General ledger trial balance &amp; all accounts</div>
+                <div class="hero-caption">Showing ${filteredAccounts.length} of ${trialBalance.glDetails.length} accounts</div>
+              </div>
               <div class="workspace-actions">
                 <button class="btn btn-sm btn-coa-filter ${this.activeCOAFilter === 'all' ? 'btn-primary' : 'btn-outline'}" data-filter="all">All</button>
                 <button class="btn btn-sm btn-coa-filter ${this.activeCOAFilter === 'assets' ? 'btn-primary' : 'btn-outline'}" data-filter="assets">Assets</button>
@@ -142,7 +145,7 @@ const TreasuryView = {
               </div>
             </div>
             <div class="workspace-card-body">
-              <div class="table-responsive" style="max-height: 260px;">
+              <div class="table-responsive">
                 <table class="mini-table">
                   <thead>
                     <tr>
@@ -154,7 +157,7 @@ const TreasuryView = {
                     </tr>
                   </thead>
                   <tbody>
-                    ${filteredAccounts.map(g => `
+                    ${filteredAccounts.length ? filteredAccounts.map(g => `
                       <tr>
                         <td>${g.code}</td>
                         <td>${g.name}</td>
@@ -162,13 +165,30 @@ const TreasuryView = {
                         <td>${g.debitVal > 0 ? Formatter.money(g.debitVal) : '-'}</td>
                         <td>${g.creditVal > 0 ? Formatter.money(g.creditVal) : '-'}</td>
                       </tr>
-                    `).join('')}
+                    `).join('') : `
+                      <tr>
+                        <td colspan="5">No accounts in this category.</td>
+                      </tr>
+                    `}
                   </tbody>
+                  <tfoot>
+                    <tr>
+                      <td colspan="3">Trial balance totals</td>
+                      <td>${Formatter.money(trialBalance.totalDebits)}</td>
+                      <td>${Formatter.money(trialBalance.totalCredits)}</td>
+                    </tr>
+                    <tr>
+                      <td colspan="3">Variance</td>
+                      <td colspan="2">${Formatter.money(trialBalance.variance)}</td>
+                    </tr>
+                  </tfoot>
                 </table>
               </div>
             </div>
           </section>
+        </div>
 
+        <div class="workspace-grid">
           <section class="workspace-card workspace-card--side">
             <div class="workspace-card-header">
               <div class="workspace-card-title">Delivery channels</div>

@@ -36,12 +36,6 @@ class FinageStore {
     return this.getDefaultState();
   }
 
-  async loadFromSupabase() {
-    if (window.SupabaseSync && typeof window.SupabaseSync.init === 'function') {
-      return window.SupabaseSync.init(this);
-    }
-  }
-
     setBaseCurrency(curr) {
     this.state.institution.baseCurrency = curr;
     if (window.Formatter) Formatter.setCurrency(curr);
@@ -900,13 +894,6 @@ class FinageStore {
   save(...dirtyKeys) {
     localStorage.setItem(this.storageKey, JSON.stringify(this.state));
     this.notify();
-    if (window.SupabaseSync && typeof window.SupabaseSync.markDirty === 'function') {
-      if (dirtyKeys.length > 0) {
-        window.SupabaseSync.markDirty(...dirtyKeys);
-      } else {
-        window.SupabaseSync.markDirty('members', 'transactions', 'auditTrail', 'generalLedger', 'branches', 'users', 'roles');
-      }
-    }
   }
 
   saveLocal() {
@@ -918,7 +905,8 @@ class FinageStore {
     const activeSchemaKey = 'finage_active_data_schema';
     const previousSchema = localStorage.getItem(activeSchemaKey);
     const localDataKeys = [
-      'ledger', 'trialBalanceExceptions', 'smsAlerts', 'channels', 'workflowTasks',
+      'roles', 'users', 'branches', 'members', 'generalLedger', 'transactions',
+      'recentTransactions', 'auditTrail', 'ledger', 'trialBalanceExceptions', 'smsAlerts', 'channels', 'workflowTasks',
       'bankAccounts', 'shortTermInvestments', 'depositLiabilities', 'maturityBuckets',
       'externalFacilities', 'operatingExpenses', 'portfolioQuality', 'disbursementQueue',
       'stressTesting', 'alerts', 'npaSummary'
@@ -931,6 +919,10 @@ class FinageStore {
     }
 
     const cleanState = this.getCleanState();
+    const emptyTenantData = {
+      roles: [], users: [], branches: [], members: [], generalLedger: [],
+      transactions: [], recentTransactions: [], auditTrail: []
+    };
     let savedTenantData = previousSchema === schemaName ? currentData : null;
     if (previousSchema !== schemaName) {
       try {
@@ -941,18 +933,10 @@ class FinageStore {
     localDataKeys.forEach(key => {
       const value = savedTenantData && Object.prototype.hasOwnProperty.call(savedTenantData, key)
         ? savedTenantData[key]
-        : cleanState[key];
+        : (Object.prototype.hasOwnProperty.call(emptyTenantData, key) ? emptyTenantData[key] : cleanState[key]);
       this.state[key] = JSON.parse(JSON.stringify(value));
     });
 
-    this.state.roles = [];
-    this.state.users = [];
-    this.state.branches = [];
-    this.state.members = [];
-    this.state.generalLedger = [];
-    this.state.transactions = [];
-    this.state.recentTransactions = [];
-    this.state.auditTrail = [];
     this.state.selectedMemberId = null;
     localStorage.setItem(activeSchemaKey, schemaName);
     localStorage.setItem(this.storageKey, JSON.stringify(this.state));
@@ -962,13 +946,6 @@ class FinageStore {
   // Use for high-frequency teller operations so the member workspace doesn't reset.
   saveQuiet(...dirtyKeys) {
     localStorage.setItem(this.storageKey, JSON.stringify(this.state));
-    if (window.SupabaseSync && typeof window.SupabaseSync.markDirty === 'function') {
-      if (dirtyKeys.length > 0) {
-        window.SupabaseSync.markDirty(...dirtyKeys);
-      } else {
-        window.SupabaseSync.markDirty('members', 'transactions', 'auditTrail', 'generalLedger', 'branches');
-      }
-    }
   }
 
   subscribe(listener) {
@@ -1087,14 +1064,7 @@ class FinageStore {
     });
 
     this.save();
-    
-    if (window.supabase) {
-      supabase.from('users').insert([newUser]).then(({ error }) => {
-        if (error) console.error('Failed to save user to DB:', error);
-      });
-      supabase.from('audit_trail').insert([this.state.auditTrail[0]]).catch(e => console.error(e));
-    }
-    
+
     return newUser.id;
   }
 

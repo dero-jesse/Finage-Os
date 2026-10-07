@@ -652,21 +652,6 @@ const App = {
       }
     });
 
-    const btnSync = document.getElementById('sync-status-badge');
-    if (btnSync) {
-      btnSync.addEventListener('click', async () => {
-        if (window.SupabaseSync) {
-          this.showToast('Synchronizing with Supabase cloud database…', 'info');
-          try {
-            await window.SupabaseSync.pullAll(store.state);
-            await window.SupabaseSync.pushAll(store.state);
-            this.showToast('Sync complete: Local & Supabase states aligned.', 'success');
-          } catch (e) {
-            this.showToast(`Sync error: ${e.message}`, 'danger');
-          }
-        }
-      });
-    }
   },
 
   showToast(message, type = 'info') {
@@ -741,12 +726,4 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   }
 
-  // 4. Initialize Supabase sync protocol in background
-  if (window.SupabaseSync && typeof window.SupabaseSync.init === 'function') {
-    try {
-      await window.SupabaseSync.init(store);
-    } catch (e) {
-      console.error('Supabase sync initialization error:', e);
-    }
-  }
 });

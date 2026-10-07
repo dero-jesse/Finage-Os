@@ -400,7 +400,7 @@ const OrganizationSetupView = {
     this._saving = true;
     this._render();
     try {
-      await SupabaseSync.applyTenantSetup({
+      await Platform.applyTenantSetup({
         name: this._organization.name,
         type: this._organization.type,
         regNumber: this._organization.reg_number,

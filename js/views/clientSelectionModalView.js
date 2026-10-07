@@ -53,12 +53,7 @@ const ClientSelectionModalView = {
             <span style="font-size: 0.75rem; font-family: var(--font-mono); color: var(--text-muted);" id="client-search-count">
               Loading records…
             </span>
-            <div style="display: flex; gap: 0.5rem; align-items: center;">
-              <span class="badge badge-muted" style="font-size: 0.68rem;">Supabase &amp; Local DB</span>
-              <button id="btn-force-refresh-clients" style="font-family: var(--font-mono); font-size: 0.7rem; font-weight: 700; padding: 2px 8px; border: 1px solid var(--border-subtle); border-radius: var(--radius-xs); background: transparent; color: var(--text-muted); cursor: pointer;">
-                Refresh Cloud
-              </button>
-            </div>
+            <span class="badge badge-muted" style="font-size: 0.68rem;">Saved on this device</span>
           </div>
         </div>
       </div>
@@ -115,34 +110,20 @@ const ClientSelectionModalView = {
     });
 
     if (countLabel) {
-      countLabel.textContent = `Showing ${filtered.length} of ${all.length} total database records`;
+      countLabel.textContent = `Showing ${filtered.length} of ${all.length} locally saved records`;
     }
 
     if (filtered.length === 0) {
       resultsContainer.innerHTML = `
         <div style="padding: 3rem 1.5rem; text-align: center; color: var(--text-muted);">
           <div style="font-weight: 800; font-size: 1.05rem; color: var(--text-main); margin-bottom: 0.35rem;">
-            No Database Records Found
+            No Locally Saved Records Found
           </div>
           <div style="font-size: 0.85rem; max-width: 420px; margin: 0 auto; line-height: 1.5;">
-            No member account matching <strong style="color: var(--text-main);">"${query}"</strong> was found in the database.
-          </div>
-          <div style="margin-top: 1.25rem;">
-            <button id="btn-search-cloud-now" class="btn btn-secondary btn-sm" style="font-size: 0.78rem;">
-              Force Pull &amp; Reload Cloud DB
-            </button>
+            No member account matching <strong style="color: var(--text-main);">"${query}"</strong> was found in locally saved records.
           </div>
         </div>
       `;
-
-      const cloudBtn = resultsContainer.querySelector('#btn-search-cloud-now');
-      if (cloudBtn && window.SupabaseSync) {
-        cloudBtn.addEventListener('click', async () => {
-          cloudBtn.textContent = 'Pulling from Supabase…';
-          await window.SupabaseSync.pullAll(store.state);
-          this.renderResults(this.currentQuery);
-        });
-      }
       return;
     }
 
@@ -254,22 +235,6 @@ const ClientSelectionModalView = {
         }
         if (e.key === 'Escape') {
           this.close();
-        }
-      });
-    }
-
-    // Cloud Refresh button
-    const refreshBtn = container.querySelector('#btn-force-refresh-clients');
-    if (refreshBtn) {
-      refreshBtn.addEventListener('click', async () => {
-        refreshBtn.textContent = 'Syncing…';
-        if (window.SupabaseSync) {
-          await window.SupabaseSync.pullAll(store.state);
-        }
-        refreshBtn.textContent = 'Refresh Cloud';
-        this.renderResults(searchInput ? searchInput.value : '');
-        if (typeof App !== 'undefined' && App.showToast) {
-          App.showToast('Database records refreshed from Supabase.', 'success');
         }
       });
     }

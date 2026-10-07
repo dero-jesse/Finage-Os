@@ -186,7 +186,10 @@ const SetupImport = {
           interestRate: this._number(this._value(row, ['interestrate', 'rate']), 0),
           nextDueDate: this._date(this._value(row, ['nextduedate', 'duedate'])),
           daysInArrears: this._number(this._value(row, ['daysinarrears', 'arrearsdays']), 0),
-          npaClassification: String(this._value(row, ['npaclassification', 'classification']) || 'Normal (Performing)')
+          npaClassification: String(this._value(row, ['npaclassification', 'classification']) || 'Normal (Performing)'),
+          status: String(this._value(row, ['status', 'loanstatus']) || 'Active'),
+          disbursedAt: this._timestamp(this._value(row, ['disbursedat', 'disburseddate'])),
+          repaymentMethod: String(this._value(row, ['repaymentmethod', 'interestmethod']) || 'reducing').toLowerCase()
         });
       } else if (kind === 'transactions') {
         const type = String(this._value(row, ['type', 'transactiontype']) || '').trim();
@@ -280,6 +283,7 @@ const SetupImport = {
 
   attachLoans(importData, existingMembers = []) {
     const members = new Map(importData.members.map(member => [member.id, member]));
+    const loans = new Map();
     importData.loans.forEach(loan => {
       let member = members.get(loan.memberId);
       if (!member) {
@@ -313,7 +317,89 @@ const SetupImport = {
         importData.errors.push(`Loan ${loan.loanId}: member ${loan.memberId} was not found in this organization.`);
         return;
       }
-      member.activeLoans.push({ ...loan });
+      const attachedLoan = { ...loan, repaymentSchedule: [], paymentHistory: [], penaltyAssessments: [] };
+      member.activeLoans.push(attachedLoan);
+      loans.set(loan.loanId, attachedLoan);
+    });
+
+    const referencedLoanIds = new Set(importData.migrationRecords
+      .filter(record => record.recordType === 'loanSchedules' || record.recordType === 'loanRepayments')
+      .map(record => String(this._value(record.payload, ['loanid', 'loanaccountid']) || '').trim()));
+    existingMembers.forEach(existing => {
+      const relevantLoans = (existing.activeLoans || []).filter(loan => referencedLoanIds.has(loan.loanId || loan.id));
+      if (!relevantLoans.length || members.has(existing.id)) return;
+      const member = { ...existing, activeLoans: (existing.activeLoans || []).map(loan => ({ ...loan })) };
+      importData.members.push(member);
+      members.set(member.id, member);
+    });
+    importData.members.forEach(member => (member.activeLoans || []).forEach(loan => {
+      const loanId = loan.loanId || loan.id;
+      if (referencedLoanIds.has(loanId) && !loans.has(loanId)) loans.set(loanId, loan);
+    }));
+
+    importData.migrationRecords
+      .filter(record => record.recordType === 'loanSchedules' || record.recordType === 'loanRepayments')
+      .forEach(record => {
+        const source = record.payload;
+        const loanId = String(this._value(source, ['loanid', 'loanaccountid']) || '').trim();
+        const loan = loans.get(loanId);
+        if (!loan) return;
+
+        if (record.recordType === 'loanSchedules') {
+          const dueDate = this._date(this._value(source, ['duedate', 'scheduleddate', 'paymentdate']));
+          const principalAmount = this._number(this._value(source, ['principaldue', 'principal', 'scheduledprincipal']), 0);
+          const interestAmount = this._number(this._value(source, ['interestdue', 'interest', 'scheduledinterest']), 0);
+          const feesDue = this._number(this._value(source, ['feesdue', 'fees', 'charges']), 0);
+          const paidAmount = this._number(this._value(source, ['paidamount', 'amountpaid']), 0);
+          if ([principalAmount, interestAmount, feesDue, paidAmount].some(Number.isNaN) ||
+              !/^\d{4}-\d{2}-\d{2}$/.test(dueDate)) {
+            importData.errors.push(`Loan schedule ${record.sourceFile}, row ${record.sourceRow}: due date and scheduled amounts must be valid.`);
+            return;
+          }
+          const installmentAmount = principalAmount + interestAmount + feesDue;
+          const sourceStatus = String(this._value(source, ['status', 'installmentstatus']) || '').toLowerCase();
+          const outstandingAmount = Math.max(0, installmentAmount - paidAmount);
+          loan.repaymentSchedule.push({
+            id: String(this._value(source, ['id', 'scheduleid', 'installmentid']) || `${loanId}-INST-${loan.repaymentSchedule.length + 1}`),
+            dueDate,
+            principalAmount,
+            interestAmount,
+            feesDue,
+            installmentAmount,
+            paidAmount,
+            outstandingAmount,
+            status: sourceStatus === 'paid' || sourceStatus === 'settled' || outstandingAmount <= 0.005 ? 'Paid' : 'Due'
+          });
+        } else {
+          const amount = this._number(this._value(source, ['amount', 'paymentamount', 'totalamount']), NaN);
+          if (!Number.isFinite(amount) || amount <= 0) {
+            importData.errors.push(`Loan repayment ${record.sourceFile}, row ${record.sourceRow}: payment amount must be greater than zero.`);
+            return;
+          }
+          loan.paymentHistory.push({
+            transactionId: String(this._value(source, ['id', 'reference', 'transactionid']) || record.id),
+            amount,
+            postedAt: this._timestamp(this._value(source, ['date', 'paymentdate', 'transactiondate'])),
+            channel: String(this._value(source, ['channel', 'paymentchannel']) || 'Imported')
+          });
+        }
+      });
+
+    loans.forEach(loan => {
+      loan.repaymentSchedule.sort((left, right) => left.dueDate.localeCompare(right.dueDate));
+      if (loan.repaymentSchedule.length) {
+        const hasSchedulePaidAmounts = loan.repaymentSchedule.some(item => item.paidAmount > 0 || item.status === 'Paid');
+        if (!hasSchedulePaidAmounts && loan.paymentHistory.length) {
+          let available = loan.paymentHistory.reduce((total, payment) => total + payment.amount, 0);
+          loan.repaymentSchedule.forEach(installment => {
+            installment.paidAmount = Math.min(installment.installmentAmount, available);
+            installment.outstandingAmount = Math.max(0, installment.installmentAmount - installment.paidAmount);
+            installment.status = installment.outstandingAmount <= 0.005 ? 'Paid' : 'Due';
+            available = Math.max(0, available - installment.installmentAmount);
+          });
+        }
+        loan.nextDueDate = loan.repaymentSchedule.find(item => item.status !== 'Paid')?.dueDate || null;
+      }
     });
     return importData;
   },

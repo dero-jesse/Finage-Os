@@ -282,7 +282,7 @@ const App = {
       treasury: { label: 'Treasury', task: 'Liquidity & funding operations' },
       'front-office': { label: 'FOSA', task: 'Branch operations & member services' },
       teller: { label: 'Teller', task: 'Cash desk operations & reconciliation' },
-      credit: { label: 'Credit', task: 'Applications, approval queue & NPA management' },
+      credit: { label: 'Credit', task: 'Loan applications, client loans & collections' },
       board: { label: 'Board', task: 'Governance, risk & oversight' }
     };
     const current = roleMap[state.currentRole] || roleMap.treasury;
@@ -379,11 +379,11 @@ const App = {
         { name: 'GL', role: 'treasury' }
       ]},
       { label: 'Credit', items: [
-        { name: 'Overview', role: 'credit' },
-        { name: 'Applications', role: 'credit' },
-        { name: 'Approval Queue', role: 'credit' },
-        { name: 'Portfolio', role: 'credit' },
-        { name: 'Collections', role: 'credit' }
+        { name: 'Overview', role: 'credit', tab: 'overview' },
+        { name: 'Applications', role: 'credit', tab: 'applications' },
+        { name: 'Client loans', role: 'credit', tab: 'portfolio' },
+        { name: 'Collections & penalties', role: 'credit', tab: 'collections' },
+        { name: 'Products & rates', role: 'credit', tab: 'products' }
       ]},
       { label: 'Board', items: [
         { name: 'Overview', role: 'board' }
@@ -413,7 +413,7 @@ const App = {
         <div class="drawer-group-label">${group.label}</div>
         <div class="drawer-menu-items">
           ${group.items.map(item => `
-            <button type="button" class="drawer-menu-item" data-portal-action="${item.role || item.action}">
+            <button type="button" class="drawer-menu-item" data-portal-action="${item.role || item.action}" data-portal-tab="${item.tab || ''}">
               <span>${item.name}</span>
               <span class="drawer-item-meta">Open</span>
             </button>
@@ -429,6 +429,9 @@ const App = {
           const fallbackRole = store.state.currentRole || 'treasury';
           store.setRole(fallbackRole);
         } else if (action === 'treasury' || action === 'front-office' || action === 'teller' || action === 'credit' || action === 'board') {
+          if (action === 'credit' && button.dataset.portalTab) {
+            CreditView.activeTab = button.dataset.portalTab;
+          }
           store.setRole(action);
         } else if (action === 'reports') {
           ReportsView.open();

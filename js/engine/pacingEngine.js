@@ -23,7 +23,7 @@ const PacingEngine = {
     // Headroom available before statutory regulatory breach (15%)
     const maxStatutoryHeadroom = Math.max(0, balances.totalGrossLiquidAssets - statutoryFloorCashRequired);
 
-    const pendingQueue = state.disbursementQueue.filter(d => d.status !== 'Disbursed' && d.status !== 'Rejected');
+    const pendingQueue = state.disbursementQueue.filter(d => String(d.status).startsWith('Approved') && d.status !== 'Disbursed');
     const totalPendingAmount = pendingQueue.reduce((sum, d) => sum + d.amount, 0);
 
     // Score and rank pending loans

@@ -246,6 +246,10 @@ const InputModalView = {
   // --- TAB 2: Loan Origination Form ---
   renderLoanTab(state) {
     const pacing = PacingEngine.getPacingAnalysis(state);
+    const loanProducts = state.loanProducts || [];
+    const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, char => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    })[char]);
 
     return `
       <form id="form-loan-app" style="display: flex; flex-direction: column; gap: 1rem;">
@@ -264,13 +268,16 @@ const InputModalView = {
           <div class="form-group" style="margin: 0;">
             <label class="form-label">Loan Product</label>
             <select id="inp-loan-product" class="form-control">
-              <option value="Agri Asset Finance">Agri Asset Finance (18.5% Yield)</option>
-              <option value="Commercial SME Working Capital">Commercial SME Working Capital (19.0% Yield)</option>
-              <option value="Micro-Enterprise Growth Loan">Micro-Enterprise Growth Loan (21.0% Yield)</option>
-              <option value="Green Solar SACCO Expansion">Green Solar SACCO Expansion (16.0% Yield)</option>
-              <option value="Asset Finance Vehicle Line">Asset Finance Vehicle Line (17.5% Yield)</option>
+              ${loanProducts.map(product => `
+                <option value="${escapeHtml(product.id)}">${escapeHtml(product.name)} (${Number(product.annualInterestRate).toFixed(2)}% p.a. · ${product.repaymentMethod === 'flat' ? 'Flat' : 'Reducing balance'}${product.rateConfigured === false ? ' · rate confirmation required' : ''})</option>
+              `).join('')}
             </select>
           </div>
+        </div>
+
+        <div class="form-group" style="margin: 0;">
+          <label class="form-label">Loan purpose</label>
+          <textarea id="inp-loan-purpose" class="form-control" rows="2" maxlength="500" required></textarea>
         </div>
 
         <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem;">
@@ -309,7 +316,8 @@ const InputModalView = {
           <div class="form-group" style="margin: 0;">
             <label class="form-label">Digital Guarantor Member</label>
             <select id="inp-loan-guarantor" class="form-control">
-              ${this.getMemberAccounts(state).map(m => `<option value="${m.id}">${m.name} ($${m.shareCapital.toLocaleString()} Shares)</option>`).join('')}
+              <option value="">No guarantor recorded</option>
+              ${this.getMemberAccounts(state).map(m => `<option value="${escapeHtml(m.id)}">${escapeHtml(m.name)} (${Formatter.money(m.shareCapital)} Shares)</option>`).join('')}
             </select>
           </div>
         </div>
@@ -780,25 +788,32 @@ const InputModalView = {
       loanForm.addEventListener('submit', (e) => {
         e.preventDefault();
         const memberId = container.querySelector('#inp-loan-member')?.value;
-        const product = container.querySelector('#inp-loan-product')?.value;
+        const productId = container.querySelector('#inp-loan-product')?.value;
+        const product = state.loanProducts.find(item => item.id === productId);
         const amount = Number(container.querySelector('#inp-loan-amount')?.value);
         const term = container.querySelector('#inp-loan-term')?.value;
         const urgency = container.querySelector('#inp-loan-urgency')?.value;
         const branch = container.querySelector('#inp-loan-branch')?.value;
 
-        const disbId = store.addLoanApplication({
-          memberId,
-          product,
-          amount,
-          term,
-          urgency,
-          branch,
-          interestRate: 18.0,
-          creditScore: 820
-        });
+        try {
+          const disbId = store.addLoanApplication({
+            memberId,
+            product: product?.name,
+            productId,
+            amount,
+            term,
+            purpose: container.querySelector('#inp-loan-purpose')?.value,
+            urgency,
+            branch,
+            guarantorMemberId: container.querySelector('#inp-loan-guarantor')?.value,
+            creditScore: 820
+          });
 
-        App.showToast(`Loan application ${disbId} for ${Formatter.money(amount)} originated and routed to Credit Workflow Inbox.`, 'success');
-        modal.classList.remove('active');
+          App.showToast(`Loan application ${disbId} for ${Formatter.money(amount)} originated and routed to Credit Workflow Inbox.`, 'success');
+          modal.classList.remove('active');
+        } catch (error) {
+          App.showToast(error.message || 'Loan application could not be submitted.', 'danger');
+        }
       });
     }
 
@@ -906,16 +921,17 @@ const InputModalView = {
     }
   },
 
-  open() {
+  open(tab = null) {
     if (!App.canOpenInputHub()) {
       App.showToast('You do not have permission to use the Input Hub.', 'danger');
       return;
     }
+    if (tab) this.activeTab = tab;
     const container = document.getElementById('input-modal-mount');
-    if (container) this.renderModal(container, store.state);
     const allowedTabs = ['members', 'transactions', 'loans', 'dfi', 'opex', 'bulk', 'journal']
       .filter(tab => App.canUseInputTab(tab));
     if (!allowedTabs.includes(this.activeTab)) this.activeTab = allowedTabs[0];
+    if (container) this.renderModal(container, store.state);
     const modal = document.getElementById('universal-input-modal');
     if (modal) {
       modal.classList.add('active');

@@ -707,15 +707,6 @@ const TellerDeskView = {
           return;
         }
 
-        if (txType === 'Loan Payment' && !isNaN(loanIdx) && profile.activeLoans[loanIdx]) {
-          profile.activeLoans[loanIdx].outstandingBalance = Math.max(0, profile.activeLoans[loanIdx].outstandingBalance - amount);
-          const loanOpt = container.querySelector(`#teller-loan-select option[value="${loanIdx}"]`);
-          if (loanOpt) {
-            const l = profile.activeLoans[loanIdx];
-            loanOpt.textContent = `${l.product} — ${l.loanId} (Bal: ${Formatter.money(l.outstandingBalance)})`;
-          }
-        }
-
         const savingsEl = container.querySelector('#teller-savings-balance');
         if (savingsEl) {
           const updatedMember = store.state.members.find(m => m.id === profile.id);

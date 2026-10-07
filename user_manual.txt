@@ -53,21 +53,31 @@ Register a member
 
 Only enter information collected and verified in line with your organization's KYC procedures. If the initial deposit is zero, the member is registered without an opening transaction.
 
-4. CREDIT WORKFLOW
-------------------
+4. CREDIT OFFICER PORTAL
+------------------------
 
 Submit a loan application
-1. Open Actions > Input Hub > Loans.
-2. Choose the applicant, loan product, requested principal, term, urgency, branch, and guarantor where required.
+1. Switch to the Credit workspace and open Applications, or choose Actions > Input Hub > Loans.
+2. Choose the applicant, loan product, requested principal, term, purpose, urgency, branch, and guarantor where required.
 3. Review the displayed liquidity headroom and pacing information.
-4. Select Submit to Credit Workflow Queue.
-5. Follow the application in the Credit workspace. Submission is an application/workflow action; it is not by itself a loan disbursement or GL posting.
+4. Select Submit to Credit Workflow Queue. The application receives a reference and remains pending until a different authorized checker reviews it.
+5. Track its review, decision, pacing, and disbursement status in Credit > Applications. Approval does not itself disburse funds.
 
 Review a credit task
 1. Switch to the Credit workspace.
 2. Review the task, amount, maker, status, and liquidity check in the workflow inbox.
-3. Use Approve & Release or Reject only if your role permits it and you have completed the required checks.
+3. Use Review & approve or Return / reject only if your role permits it and you have completed the required checks. Rejection requires a reason.
 4. Follow your organization's maker-checker policy. Do not approve a request that you initiated when segregation of duties applies.
+5. An approved application enters the pacing queue. An authorized checker must separately confirm disbursement.
+
+Manage products, repayments, and penalties
+- Credit > Client loans shows disbursed loan balances, instalments, due dates, repayment activity, and assessed penalties.
+- Credit > Products & rates lets an authorized credit checker create loan products and configure annual interest, flat or reducing-balance repayments, penalty grace days, a fixed late fee, and a simple daily rate.
+- Existing sample product rates are unconfirmed defaults. An authorized credit checker must save/confirm each product's approved rate before it can be selected for a new application; zero interest may be confirmed where that is the approved policy.
+- A new loan snapshots its product terms. Later product changes apply only to new applications.
+- Credit > Collections & penalties lists overdue scheduled instalments. Suggested penalties use the saved product policy and remain subject to checker review and adjustment. The fixed fee is charged once per overdue instalment; the daily rate is simple, not compounded.
+- A recorded penalty is tracked on the loan account only. This release does not collect the penalty or post it to the General Ledger; follow the approved accounting and collections procedures.
+- Loan repayments should be posted through the existing Transactions workflow and linked to the correct member and loan. Repayments are applied to scheduled instalments in due-date order for arrears tracking.
 
 Post a loan-loss provision
 Use the Credit workspace's Post NPA Provision action for an approved provision. The configured entry is Dr 5030 Loan Loss Provision Expense and Cr 1250 Allowance for Loan Impairment. Review the amount and authorization before posting.

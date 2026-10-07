@@ -8,7 +8,9 @@ const WorkflowEngine = {
    * Evaluates pending workflow tasks across all operational modules
    */
   getPendingTasks(state, roleFilter = null) {
-    const tasks = state.workflowTasks || [];
+    const tasks = (state.workflowTasks || []).filter(task =>
+      !/approved|rejected|returned|completed|released/i.test(task.makerCheckerStatus || '')
+    );
     if (!roleFilter) return tasks;
 
     return tasks.filter(t => {
@@ -38,6 +40,10 @@ const WorkflowEngine = {
         action: `Rejected: ${notes}`,
         timestamp: new Date().toISOString()
       });
+
+      if (task.type === 'Loan Application Review') {
+        store.updateDisbursementStatus(task.entityId, 'Rejected');
+      }
 
       store.state.auditTrail.unshift({
         id: `AUD-${Date.now().toString().slice(-4)}`,

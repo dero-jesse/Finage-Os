@@ -16,6 +16,8 @@ class FinageStore {
       try {
         const parsed = JSON.parse(saved);
         const defaultState = this.getDefaultState();
+        parsed.loanProducts ||= defaultState.loanProducts;
+        parsed.loanPenaltyPolicyVersion ||= 1;
         // Automatically migrate if generalLedger has legacy structure or trialBalanceExceptions is missing
         if (!parsed.generalLedger || parsed.generalLedger.length < defaultState.generalLedger.length || !parsed.trialBalanceExceptions) {
           console.log('Migrating store state to compliant v3.1 Chart of Accounts...');
@@ -844,6 +846,15 @@ class FinageStore {
         }
       ],
 
+      loanProducts: [
+        { id: 'PROD-AGRI', name: 'Agri Asset Finance', annualInterestRate: 18.5, rateConfigured: false, repaymentMethod: 'reducing', penaltyGraceDays: 0, penaltyFixedFee: 0, penaltyDailyRate: 0 },
+        { id: 'PROD-SME', name: 'Commercial SME Working Capital', annualInterestRate: 19.0, rateConfigured: false, repaymentMethod: 'reducing', penaltyGraceDays: 0, penaltyFixedFee: 0, penaltyDailyRate: 0 },
+        { id: 'PROD-MICRO', name: 'Micro-Enterprise Growth Loan', annualInterestRate: 21.0, rateConfigured: false, repaymentMethod: 'flat', penaltyGraceDays: 0, penaltyFixedFee: 0, penaltyDailyRate: 0 },
+        { id: 'PROD-GREEN', name: 'Green Solar SACCO Expansion', annualInterestRate: 16.0, rateConfigured: false, repaymentMethod: 'reducing', penaltyGraceDays: 0, penaltyFixedFee: 0, penaltyDailyRate: 0 },
+        { id: 'PROD-AUTO', name: 'Asset Finance Vehicle Line', annualInterestRate: 17.5, rateConfigured: false, repaymentMethod: 'reducing', penaltyGraceDays: 0, penaltyFixedFee: 0, penaltyDailyRate: 0 }
+      ],
+      loanPenaltyPolicyVersion: 1,
+
       stressTesting: {
         withdrawalSpikePct: 15.0,
         repaymentDropPct: 10.0,
@@ -906,7 +917,8 @@ class FinageStore {
     const previousSchema = localStorage.getItem(activeSchemaKey);
     const localDataKeys = [
       'roles', 'users', 'branches', 'members', 'generalLedger', 'transactions',
-      'recentTransactions', 'auditTrail', 'ledger', 'trialBalanceExceptions', 'smsAlerts', 'channels', 'workflowTasks',
+      'recentTransactions', 'auditTrail', 'loanProducts', 'loanPenaltyPolicyVersion',
+      'ledger', 'trialBalanceExceptions', 'smsAlerts', 'channels', 'workflowTasks',
       'bankAccounts', 'shortTermInvestments', 'depositLiabilities', 'maturityBuckets',
       'externalFacilities', 'operatingExpenses', 'portfolioQuality', 'disbursementQueue',
       'stressTesting', 'alerts', 'npaSummary'
@@ -1326,6 +1338,14 @@ class FinageStore {
           const loan = loanId ? member.activeLoans?.find(l => l.loanId === loanId || l.id === loanId) : member.activeLoans?.[0];
           if (loan) {
             loan.outstandingBalance = Math.max(0, loan.outstandingBalance - parsedAmount);
+            loan.paymentHistory ||= [];
+            loan.paymentHistory.push({
+              transactionId: txId,
+              amount: parsedAmount,
+              postedAt: new Date().toISOString(),
+              channel: channel || ''
+            });
+            this.applyLoanPaymentsToSchedule(loan);
           }
         } else if (type.includes('Disbursement')) {
           if (!member.activeLoans) member.activeLoans = [];
@@ -1526,8 +1546,17 @@ class FinageStore {
 
   addLoanApplication(formData) {
     const member = this.state.members.find(m => m.id === formData.memberId);
-    const disbId = `DISB-${Date.now().toString().slice(-4)}`;
+    if (!member) throw new Error('Select a valid member before submitting a loan application.');
+    if (!(Number(formData.amount) > 0)) throw new Error('Requested principal must be greater than zero.');
+    if (!(Number(formData.term) > 0)) throw new Error('Loan term must be greater than zero.');
+    const disbId = `LNAPP-${Date.now().toString(36).toUpperCase()}`;
     const currentUser = this.getCurrentUser();
+    const product = (this.state.loanProducts || []).find(item => item.id === formData.productId) ||
+      (this.state.loanProducts || []).find(item => item.name === formData.product);
+    if (!product) throw new Error('Select a valid loan product.');
+    if (product.rateConfigured === false) {
+      throw new Error('An authorized credit checker must confirm this product rate before an application can be submitted.');
+    }
 
     const newLoan = {
       id: disbId,
@@ -1535,20 +1564,32 @@ class FinageStore {
       memberId: formData.memberId,
       branch: formData.branch || 'Nairobi Central Branch',
       product: formData.product,
+      productId: product.id,
       amount: Number(formData.amount),
+      purpose: String(formData.purpose || '').trim(),
+      termMonths: Number(formData.term),
+      guarantorMemberId: formData.guarantorMemberId || null,
       appliedDate: new Date().toISOString().split('T')[0],
       creditScore: Number(formData.creditScore) || 800,
-      expectedYield: Number(formData.interestRate) || 18.0,
+      expectedYield: Number(product.annualInterestRate) || 0,
+      annualInterestRate: Number(product.annualInterestRate) || 0,
+      repaymentMethod: product.repaymentMethod || 'reducing',
+      penaltyPolicy: {
+        graceDays: Number(product.penaltyGraceDays) || 0,
+        fixedFee: Number(product.penaltyFixedFee) || 0,
+        dailyRate: Number(product.penaltyDailyRate) || 0,
+        version: Number(this.state.loanPenaltyPolicyVersion) || 1
+      },
       urgency: formData.urgency || 'Medium',
-      status: 'Approved - Pending Pacing',
-      staggeredBatch: 'Batch 2'
+      status: 'Application Submitted',
+      staggeredBatch: null
     };
 
     this.state.disbursementQueue.unshift(newLoan);
 
     // Create Maker-Checker workflow task
-    WorkflowEngine.createTask({
-      type: 'Loan Disbursement Release',
+    newLoan.workflowTaskId = WorkflowEngine.createTask({
+      type: 'Loan Application Review',
       entityId: disbId,
       title: `${formData.product} - ${newLoan.clientName}`,
       amount: Number(formData.amount),
@@ -1563,10 +1604,10 @@ class FinageStore {
       timestamp: new Date().toISOString(),
       userId: currentUser.id,
       userName: currentUser.name,
-      action: 'LOAN_APPLICATION_ORIGINATED',
-      module: 'Credit & Pipeline (Layer 1/5)',
+      action: 'LOAN_APPLICATION_SUBMITTED',
+      module: 'Credit & Loans',
       entityId: disbId,
-      description: `Originated ${formData.product} application for ${newLoan.clientName} of ${Formatter.money(newLoan.amount)}`,
+      description: `Submitted ${formData.product} application for ${newLoan.clientName}: ${Formatter.money(newLoan.amount)} over ${newLoan.termMonths} months.`,
       ipAddress: '192.168.10.15',
       glImpact: 'Pending Disbursement Approval'
     });
@@ -1640,6 +1681,12 @@ class FinageStore {
     const task = this.state.workflowTasks.find(t => t.id === taskId);
     const currentUser = this.getCurrentUser();
     if (!task) return { success: false, error: 'Task not found' };
+    if (task.type === 'Loan Application Review') {
+      const permissions = UserManagementEngine.getUserRoles(this.state, currentUser?.id).flatMap(role => role.permissions || []);
+      if (!currentUser?.roles?.includes('ROLE-ADMIN') && !permissions.includes('APPROVE_CREDIT_FACILITY')) {
+        return { success: false, error: 'Credit checker permission is required to approve loan applications.' };
+      }
+    }
 
     // Segregation of Duties (SoD) Dual-Control Check
     if (task.makerUserId && task.makerUserId === currentUser.id) {
@@ -1665,7 +1712,9 @@ class FinageStore {
       timestamp: new Date().toISOString()
     });
 
-    if (task.type === 'Loan Disbursement Release') {
+    if (task.type === 'Loan Application Review') {
+      this.updateDisbursementStatus(task.entityId, 'Approved - Pending Pacing');
+    } else if (task.type === 'Loan Disbursement Release') {
       this.updateDisbursementStatus(task.entityId, 'Disbursed');
     }
 
@@ -1717,6 +1766,28 @@ class FinageStore {
   updateDisbursementStatus(loanId, newStatus, batch = null) {
     const item = this.state.disbursementQueue.find(d => d.id === loanId);
     if (!item) return false;
+    const previousStatus = item.status;
+    if (newStatus === 'Disbursed') {
+      const user = this.getCurrentUser();
+      const permissions = UserManagementEngine.getUserRoles(this.state, user?.id).flatMap(role => role.permissions || []);
+      const canRelease = user?.roles?.includes('ROLE-ADMIN') ||
+        permissions.some(permission => ['APPROVE_CREDIT_FACILITY', 'PACING_RELEASE_AUTHORIZE'].includes(permission));
+      if (!canRelease) {
+        App.showToast('You are not authorized to release a loan.', 'danger');
+        return false;
+      }
+      if (!String(item.status).startsWith('Approved')) {
+        App.showToast('Only an approved application can be disbursed.', 'danger');
+        return false;
+      }
+      if (item.workflowTaskId) {
+        const task = this.state.workflowTasks.find(workflowTask => workflowTask.id === item.workflowTaskId);
+        if (task?.makerCheckerStatus !== 'Approved & Released') {
+          App.showToast('Complete maker-checker approval before disbursement.', 'danger');
+          return false;
+        }
+      }
+    }
     item.status = newStatus;
     if (batch) item.staggeredBatch = batch;
 
@@ -1724,9 +1795,9 @@ class FinageStore {
       if (this.state.bankAccounts && this.state.bankAccounts[1]) {
         this.state.bankAccounts[1].balance -= item.amount;
       }
-      
+
       // Post through Double-Entry Posting Engine: Dr 1200 Gross Loans / Cr 1020 Commercial Bank Clearing
-      this.postTransaction({
+      const posted = this.postTransaction({
         type: 'Loan Disbursement',
         memberId: item.memberId || null,
         loanId: item.id,
@@ -1736,10 +1807,227 @@ class FinageStore {
         glCreditCode: '1020',
         description: `Loan disbursement of ${Formatter.money(item.amount)} to ${item.clientName} (${item.product})`
       });
+      if (!posted) {
+        item.status = previousStatus;
+        if (this.state.bankAccounts && this.state.bankAccounts[1]) {
+          this.state.bankAccounts[1].balance += item.amount;
+        }
+        this.save();
+        return false;
+      }
+      const member = this.state.members.find(record => record.id === item.memberId);
+      const loan = member?.activeLoans?.find(record => record.loanId === item.id);
+      if (loan) {
+        const termMonths = Number(item.termMonths) || 12;
+        const annualRate = Number(item.annualInterestRate ?? item.expectedYield) || 0;
+        const monthlyRate = annualRate / 1200;
+        const installment = item.repaymentMethod === 'flat'
+          ? (item.amount * (1 + (annualRate / 100) * termMonths / 12)) / termMonths
+          : (monthlyRate === 0
+            ? item.amount / termMonths
+            : item.amount * monthlyRate / (1 - Math.pow(1 + monthlyRate, -termMonths)));
+        const disbursedDate = new Date();
+        const schedule = [];
+        let balance = Number(item.amount);
+        for (let month = 1; month <= termMonths; month += 1) {
+          const dueDate = new Date(disbursedDate);
+          dueDate.setMonth(dueDate.getMonth() + month);
+          const interest = item.repaymentMethod === 'flat'
+            ? Number(item.amount) * monthlyRate
+            : balance * monthlyRate;
+          const principal = month === termMonths
+            ? balance
+            : Math.min(balance, Math.max(0, installment - interest));
+          schedule.push({
+            id: `${item.id}-INST-${month}`,
+            dueDate: dueDate.toISOString().slice(0, 10),
+            installmentAmount: month === termMonths ? balance + interest : installment,
+            principalAmount: principal,
+            interestAmount: interest,
+            status: 'Due'
+          });
+          balance = Math.max(0, balance - principal);
+        }
+        Object.assign(loan, {
+          product: item.product,
+          principal: Number(item.amount),
+          outstandingBalance: Number(item.amount),
+          termMonths,
+          interestRate: annualRate,
+          repaymentMethod: item.repaymentMethod || 'reducing',
+          monthlyInstallment: installment,
+          repaymentSchedule: schedule,
+          nextDueDate: schedule[0]?.dueDate || null,
+          penaltyPolicy: { ...(item.penaltyPolicy || {}) },
+          penaltyAssessments: [],
+          paymentHistory: [],
+          disbursedAt: disbursedDate.toISOString()
+        });
+      }
+      item.disbursedAt = new Date().toISOString();
     } else {
       this.save();
     }
     return true;
+  }
+
+  updateLoanProduct(productId, values) {
+    const currentUser = this.getCurrentUser();
+    const permissions = UserManagementEngine.getUserRoles(this.state, currentUser?.id).flatMap(role => role.permissions || []);
+    if (!currentUser?.roles?.includes('ROLE-ADMIN') && !permissions.includes('APPROVE_CREDIT_FACILITY')) {
+      throw new Error('Only an authorized credit checker can change loan product policies.');
+    }
+    const product = (this.state.loanProducts || []).find(item => item.id === productId);
+    if (!product) throw new Error('Loan product not found.');
+    const annualInterestRate = Number(values.annualInterestRate);
+    const graceDays = Number(values.penaltyGraceDays);
+    const fixedFee = Number(values.penaltyFixedFee);
+    const dailyRate = Number(values.penaltyDailyRate);
+    if (![annualInterestRate, graceDays, fixedFee, dailyRate].every(Number.isFinite) ||
+        annualInterestRate < 0 || graceDays < 0 || fixedFee < 0 || dailyRate < 0) {
+      throw new Error('Rates, grace days, and fees must be valid non-negative numbers.');
+    }
+    if (!['flat', 'reducing'].includes(values.repaymentMethod)) {
+      throw new Error('Select a supported repayment method.');
+    }
+
+    const previous = { ...product };
+    Object.assign(product, {
+      annualInterestRate,
+      rateConfigured: true,
+      penaltyGraceDays: Math.floor(graceDays),
+      penaltyFixedFee: fixedFee,
+      penaltyDailyRate: dailyRate,
+      repaymentMethod: values.repaymentMethod
+    });
+    this.state.loanPenaltyPolicyVersion = (Number(this.state.loanPenaltyPolicyVersion) || 1) + 1;
+    this.state.auditTrail.unshift({
+      id: `AUD-${Date.now().toString(36).toUpperCase()}`,
+      timestamp: new Date().toISOString(),
+      userId: currentUser.id,
+      userName: currentUser.name,
+      action: 'LOAN_PRODUCT_POLICY_UPDATED',
+      module: 'Credit Product Administration',
+      entityId: product.id,
+      description: `Updated ${product.name} rates and repayment policy. Prior annual rate ${previous.annualInterestRate}%; new annual rate ${product.annualInterestRate}%.`,
+      ipAddress: 'Local application',
+      glImpact: 'New applications only; existing accounts retain their saved terms'
+    });
+    this.save();
+    return product;
+  }
+
+  addLoanProduct(values) {
+    const currentUser = this.getCurrentUser();
+    const permissions = UserManagementEngine.getUserRoles(this.state, currentUser?.id).flatMap(role => role.permissions || []);
+    if (!currentUser?.roles?.includes('ROLE-ADMIN') && !permissions.includes('APPROVE_CREDIT_FACILITY')) {
+      throw new Error('Only an authorized credit checker can add loan products.');
+    }
+    const name = String(values.name || '').trim();
+    if (!name) throw new Error('Enter a loan product name.');
+    if ((this.state.loanProducts || []).some(product => product.name.toLowerCase() === name.toLowerCase())) {
+      throw new Error('A loan product with that name already exists.');
+    }
+    const annualInterestRate = Number(values.annualInterestRate);
+    if (!Number.isFinite(annualInterestRate) || annualInterestRate < 0) {
+      throw new Error('Annual interest rate must be a valid non-negative number.');
+    }
+    if (!['flat', 'reducing'].includes(values.repaymentMethod)) {
+      throw new Error('Select a supported repayment method.');
+    }
+    const product = {
+      id: `PROD-${Date.now().toString(36).toUpperCase()}`,
+      name,
+      annualInterestRate,
+      rateConfigured: true,
+      repaymentMethod: values.repaymentMethod,
+      penaltyGraceDays: Number(values.penaltyGraceDays) || 0,
+      penaltyFixedFee: Number(values.penaltyFixedFee) || 0,
+      penaltyDailyRate: Number(values.penaltyDailyRate) || 0
+    };
+    if (![product.penaltyGraceDays, product.penaltyFixedFee, product.penaltyDailyRate].every(Number.isFinite) ||
+        product.penaltyGraceDays < 0 || product.penaltyFixedFee < 0 || product.penaltyDailyRate < 0) {
+      throw new Error('Penalty settings must be valid non-negative numbers.');
+    }
+    product.penaltyGraceDays = Math.floor(product.penaltyGraceDays);
+    this.state.loanProducts.push(product);
+    this.state.loanPenaltyPolicyVersion = (Number(this.state.loanPenaltyPolicyVersion) || 1) + 1;
+    this.state.auditTrail.unshift({
+      id: `AUD-${Date.now().toString(36).toUpperCase()}`,
+      timestamp: new Date().toISOString(),
+      userId: currentUser.id,
+      userName: currentUser.name,
+      action: 'LOAN_PRODUCT_CREATED',
+      module: 'Credit Product Administration',
+      entityId: product.id,
+      description: `Created loan product ${product.name} with annual rate ${product.annualInterestRate}% and ${product.repaymentMethod} repayment method.`,
+      ipAddress: 'Local application',
+      glImpact: 'No posting'
+    });
+    this.save();
+    return product;
+  }
+
+  recordLoanPenalty({ memberId, loanId, installmentId, amount, reason }) {
+    const user = this.getCurrentUser();
+    const permissions = UserManagementEngine.getUserRoles(this.state, user?.id).flatMap(role => role.permissions || []);
+    if (!user?.roles?.includes('ROLE-ADMIN') && !permissions.includes('APPROVE_CREDIT_FACILITY')) {
+      throw new Error('Only an authorized credit checker can record a loan penalty.');
+    }
+    const member = this.state.members.find(item => item.id === memberId);
+    const loan = member?.activeLoans?.find(item => item.loanId === loanId || item.id === loanId);
+    const parsedAmount = Number(amount);
+    const notes = String(reason || '').trim();
+    if (!loan) throw new Error('Loan account was not found.');
+    if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) throw new Error('Penalty must be greater than zero.');
+    if (!notes) throw new Error('Enter the reason for this penalty.');
+    if (!installmentId) throw new Error('A valid overdue instalment is required.');
+    loan.penaltyAssessments ||= [];
+    const today = new Date().toISOString().slice(0, 10);
+    if (loan.penaltyAssessments.some(item =>
+      item.installmentId === installmentId && item.assessedAt?.slice(0, 10) === today
+    )) {
+      throw new Error('A penalty adjustment has already been recorded for this instalment today.');
+    }
+
+    const assessment = {
+      id: `PEN-${Date.now().toString(36).toUpperCase()}`,
+      installmentId,
+      amount: parsedAmount,
+      reason: notes,
+      assessedAt: new Date().toISOString(),
+      assessedBy: user.name,
+      status: 'Assessed - Unpaid'
+    };
+    loan.penaltyAssessments.push(assessment);
+    this.state.auditTrail.unshift({
+      id: `AUD-${Date.now().toString(36).toUpperCase()}`,
+      timestamp: assessment.assessedAt,
+      userId: user.id,
+      userName: user.name,
+      action: 'LOAN_PENALTY_ASSESSED',
+      module: 'Credit & Collections',
+      entityId: loanId,
+      description: `Recorded ${Formatter.money(parsedAmount)} penalty on ${loanId}. Reason: ${notes}`,
+      ipAddress: 'Local application',
+      glImpact: 'Not posted; penalty receivable accounting policy required'
+    });
+    this.save();
+    return assessment;
+  }
+
+  applyLoanPaymentsToSchedule(loan) {
+    const schedule = loan.repaymentSchedule || [];
+    let available = (loan.paymentHistory || [])
+      .reduce((total, payment) => total + (Number(payment.amount) || 0), 0);
+    schedule.forEach(installment => {
+      const amount = Number(installment.installmentAmount) || 0;
+      installment.paidAmount = Math.min(amount, available);
+      installment.outstandingAmount = Math.max(0, amount - installment.paidAmount);
+      installment.status = installment.outstandingAmount <= 0.005 ? 'Paid' : 'Due';
+      available = Math.max(0, available - amount);
+    });
+    loan.nextDueDate = schedule.find(installment => installment.status !== 'Paid')?.dueDate || null;
   }
 
   getCleanState() {

@@ -52,19 +52,36 @@ const UserManagementEngine = {
   async loginWithAuth(state, email, password) {
     // --- PATH 1: Supabase Auth (real operations) ---
     if (window.supabase) {
+      let authData;
       try {
-        const { data, error } = await window.supabase.auth.signInWithPassword({ email, password });
-        if (error) {
-          // Auth failed — return the Supabase error message
-          return { success: false, error: error.message };
-        }
+        const result = await window.supabase.auth.signInWithPassword({ email, password });
+        if (result.error) return { success: false, error: `Sign-in failed: ${result.error.message}` };
+        authData = result.data;
+      } catch (error) {
+        const detail = error.message || 'The network request failed.';
+        const networkFailure = error instanceof TypeError || /failed to fetch|networkerror|load failed/i.test(detail);
+        return {
+          success: false,
+          error: networkFailure
+            ? `Could not reach Supabase Auth. Check this device's internet connection, DNS/VPN/firewall settings, and whether browser extensions are blocking requests to the configured Supabase project. Details: ${detail}`
+            : `Could not reach Supabase Auth: ${detail}`
+        };
+      }
+
+      try {
+        const data = authData;
         if (data.user?.user_metadata?.password_change_required === true) {
           state.passwordChangeRequired = true;
           state.passwordChangeEmail = data.user.email || email;
           state.isAuthenticated = true;
           return { success: true, passwordChangeRequired: true };
         }
-        if (window.Platform) await window.Platform.init();
+        if (window.Platform) {
+          await window.Platform.init();
+          if (window.Platform.context.operationalStatus === 'error') {
+            throw new Error(window.Platform.context.operationalError || 'Organization access could not be loaded.');
+          }
+        }
         const normalizedEmail = email.toLowerCase();
         let systemUser = state.users.find(u => u.email.toLowerCase() === normalizedEmail);
 
@@ -98,7 +115,7 @@ const UserManagementEngine = {
         this._applyLogin(state, systemUser);
         return { success: true };
       } catch (e) {
-        return { success: false, error: 'Auth service unreachable: ' + e.message };
+        return { success: false, error: `Signed in, but organization access failed: ${e.message}` };
       }
     }
 

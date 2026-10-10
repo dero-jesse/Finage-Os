@@ -37,7 +37,7 @@ const Platform = {
       return {
         member_create: false, counter_post: false, manual_journal: false,
         credit_application: false, credit_admin: false, treasury_drawdown: false,
-        treasury_invest: false, opex_manage: false, branch_reconcile: false,
+        credit_release: false, treasury_invest: false, opex_manage: false, branch_reconcile: false,
         till_reconcile: false, portfolio_provision: false, user_manage: false
       };
     },
@@ -49,7 +49,7 @@ const Platform = {
         create_loan_application: 'credit_application',
         review_loan_application: 'credit_admin',
         set_loan_pacing: 'credit_admin',
-        disburse_loan_application: 'credit_admin',
+        disburse_loan_application: 'credit_release',
         assess_loan_penalty: 'credit_admin',
         create_external_facility: 'treasury_drawdown',
         draw_external_facility: 'treasury_drawdown',
@@ -62,7 +62,10 @@ const Platform = {
         update_user_roles: 'user_manage',
         update_user_status: 'user_manage'
       }[action];
-      if (!capability || this.context.writeCapabilities[capability] !== true) {
+      const authorized = action === 'disburse_loan_application'
+        ? this.context.writeCapabilities.credit_admin === true || this.context.writeCapabilities.credit_release === true
+        : this.context.writeCapabilities[capability] === true;
+      if (!capability || !authorized) {
         throw new Error(`The ${action} operation is not enabled for this user.`);
       }
       if (!window.supabase || !this.context.currentOrgId) throw new Error('An authenticated online organization is required.');
@@ -85,7 +88,7 @@ const Platform = {
 
     async executeFinancialAction(action, amount, description, { idempotencyKey, memberId = null, loanId = null, referenceId = null, notify = true } = {}) {
       const capability = {
-        loan_disbursement: 'credit_admin',
+        loan_disbursement: 'credit_release',
         dfi_drawdown: 'treasury_drawdown',
         loan_loss_provision: 'portfolio_provision',
         investment_placement: 'treasury_invest',
@@ -117,6 +120,24 @@ const Platform = {
       }
       return { transaction: data, refreshError };
     },
+  },
+
+  emptyWriteCapabilities() {
+    return {
+      member_create: false, counter_post: false, manual_journal: false,
+      credit_application: false, credit_admin: false, credit_release: false,
+      treasury_drawdown: false, treasury_invest: false, opex_manage: false,
+      branch_reconcile: false, till_reconcile: false,
+      portfolio_provision: false, user_manage: false
+    };
+  },
+
+  executeDomainAction(action, payload, options) {
+    return this.context.executeDomainAction.call(this, action, payload, options);
+  },
+
+  executeFinancialAction(action, amount, description, options) {
+    return this.context.executeFinancialAction.call(this, action, amount, description, options);
   },
 
   // Bootstrap the verified Supabase identity, tenant authorization, and remote records.

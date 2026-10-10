@@ -7,15 +7,22 @@ This guide explains the main screens and the everyday tasks available in Finage 
 
 CURRENT ONLINE MIGRATION STATUS
 -------------------------------
-This build is not yet a fully online operational banking system and is not ready for general live financial use. Sign-in, organization discovery, and authorized reads of tenant roles, users, branches, members, the General Ledger, transactions, and audit trail use Supabase. Browser storage is no longer used to save operational data. An online gate enables only actions for which the server confirms a permission-specific atomic RPC: member creation; teller/member cash deposits and withdrawals; loan repayments; and manual two-leg GL journals. Other teller, credit, workflow, treasury, setup and administration actions remain blocked. Rejected or offline writes are not treated as success.
+This build is not yet a fully online operational banking system and is not ready for general live financial use. Sign-in, organization discovery, and tenant operational reads use Supabase; operational records are not persisted in browser storage. The online gate exposes only actions whose server-authorized RPC capability is confirmed for the signed-in user.
 
-For an enabled action, the form waits for the Supabase response and displays a reference only after server acceptance. Posting updates GL balances, the member balance or loan payment history, the authenticated operator's branch/till cash, the transaction record and audit trail in one database transaction. Repayments require a selected member-owned loan. Manual journals require the server-confirmed GL-journal permission and balanced valid legs. If the server accepts a post but the follow-up read fails, the UI reports acceptance and the refresh problem separately; do not repeat it with a new reference.
+Currently supported online write surfaces (only visible when the respective permission is returned by Supabase):
+- Member creation; teller/member deposits, withdrawals, loan repayments; and balanced two-leg manual journals.
+- Loan product create/update; loan application submission; maker-checker approve/reject, pacing, disbursement, and overdue-installment penalty assessment.
+- DFI facility registration and drawdown; operating-expense schedule creation (not expense settlement); treasury investment placement/redemption; vault physical-count reconciliation; the authenticated operator's assigned-till count; loan-loss provision posting; and existing-user role/status updates.
+
+Financial actions wait for server acceptance and update their GL entries, relevant member/facility/investment/branch record, transaction row, and audit trail in one server transaction. Loan disbursement also creates its repayment schedule and updates the member loan sub-ledger atomically. Domain actions persist an actor/action/payload-bound idempotency result so retrying an ambiguous request with the same form key cannot perform it twice or reuse the key for a different payload. Counter repayments require a selected member-owned loan. If a write is accepted but its follow-up refresh fails, the UI reports acceptance and refresh failure separately; do not submit a replacement reference. Rejected/offline writes are not success.
+
+Important boundaries: the full Teller/Credit/Treasury/Branch workspaces remain behind the readiness gate. This phase does not provide branch/teller assignment, another user's till adjustment, general-purpose workflow actions, user invitations/Auth provisioning, user/role creation, organization/branch setup, DFI repayments, expense payment, investment-yield accrual, batch CSV posting, or all board/governance/credit-review modules. Investments affect GL accounts 1300/1020 only; this repository has no bank-account subledger schema. Supported loan approval enforces single/daily approval limits and maker-checker separation, but further institutional credit policy, board stages, collateral, guarantor consent, and servicing rules are not implemented. Do not treat this bounded surface as production-ready banking software.
 
 One-time legacy import
 ----------------------
 An organization administrator can use “Review browser records for one-time import” when the tenant lists visible to the current account are empty. The review step reports supported records before requiring a separate confirmation. Supabase then checks tenant emptiness authoritatively inside the import transaction and rejects the request if any branch, GL account, member, transaction, audit event, or previous import batch exists; remote data is never overwritten. The import supports branches (including teller/vault state), GL accounts, members (including embedded active-loan data), transactions, legacy GL journal entries preserved in transaction details, audit trail, and migration counts. It does not migrate roles/users, workflow queues, product configuration, treasury portfolios, or other module-only state. Those records require a separate migration.
 
-Deployment prerequisite: apply `online_data_migration.sql` to an existing Supabase installation before using the import control. It revokes direct browser DML on existing tenant schemas and removes authenticated direct access to the setup write RPC; fresh installations created from the updated `platform_schema.sql` start with tenant tables read-only. Then apply `online_financial_writes.sql` to enable the bounded RPCs described above. These migrations do not delete or rewrite existing rows. Tenant schemas must be exposed through the existing platform provisioning/security configuration. Verify the target organization and a current backup before approving an import. The selected browser's legacy cache is removed only after Supabase confirms successful import. Sign-in tokens and the last selected organization preference may still use browser storage; operational records may not.
+Deployment prerequisite: apply `online_data_migration.sql` to an existing installation before using the one-time import control. It revokes direct browser DML on existing tenant schemas and removes authenticated direct access to setup writes. Apply `online_financial_writes.sql`, then `online_extended_writes.sql`; the latter adds domain tables and replaces the capability RPC. These migrations have not been deployed or tested against a live database. `online_extended_writes.sql` provisions tenant schemas that exist when it runs; after provisioning any new organization, re-run it before enabling that organization's extended online operations. Confirm API schema exposure for tenant schemas. Review the target organization and backup before importing. The selected browser's legacy cache is deleted only after Supabase accepts the one-time import. Sign-in tokens and the last selected organization preference may still use browser storage; operational records may not.
 
 1. SIGN IN AND SELECT AN ORGANIZATION
 -------------------------------------
@@ -25,7 +32,7 @@ Deployment prerequisite: apply `online_data_migration.sql` to an existing Supaba
 4. If you are asked to select an organization, choose the organization you are authorized to work in.
 5. Check the organization name in the application header before posting, importing, exporting, or changing setup.
 6. If no organization is available, or the wrong organization is shown, contact your platform administrator. Do not enter records under another organization's workspace.
-7. In this migration build, the online-readiness gate is expected. Use only the specific actions shown there; the full operational workspaces remain unavailable. Do not attempt to bypass the gate.
+7. In this migration build, the readiness gate is expected. Use only actions shown there; all omitted actions/workspaces remain unavailable. Do not attempt to bypass the gate.
 
 2. NAVIGATION BASICS
 --------------------
@@ -39,7 +46,7 @@ Keyboard shortcuts:
 - Alt+N opens the Input Hub.
 - Alt+U opens User Access when your account has user-management permission.
 
-The remaining operational sections are retained as feature reference only. Their actions are disabled by the online-readiness gate in this migration build unless explicitly listed as a supported online action above.
+The remaining operational sections are retained as feature reference only. Their actions are unavailable in this migration build unless explicitly listed as supported online actions above.
 
 3. TELLER AND MEMBER OPERATIONS
 -------------------------------

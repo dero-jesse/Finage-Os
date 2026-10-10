@@ -12,8 +12,22 @@
 
 const BranchView = {
   render(container, state) {
-    const currentBranch = state.branches.find(b => b.id === state.selectedBranchId) || state.branches[0];
-    const totalTillCash = currentBranch.tillBalances.reduce((sum, t) => sum + t.balance, 0);
+    const branches = Array.isArray(state.branches) ? state.branches : [];
+    const currentBranch = branches.find(b => b.id === state.selectedBranchId) || branches[0];
+    if (!currentBranch) {
+      container.innerHTML = `
+        <section class="workspace-module" role="status">
+          <div class="glass-panel" style="padding: 2rem;">
+            <h2>FOSA branch operations unavailable</h2>
+            <p>No branches are configured for this organization yet. Ask an organization administrator to configure a branch, then reload the organization data.</p>
+          </div>
+        </section>
+      `;
+      return;
+    }
+
+    const tillBalances = Array.isArray(currentBranch.tillBalances) ? currentBranch.tillBalances : [];
+    const totalTillCash = tillBalances.reduce((sum, t) => sum + (Number(t.balance) || 0), 0);
     const totalBranchCash = currentBranch.cashInVault + totalTillCash;
     const vaultUtilization = (currentBranch.cashInVault / currentBranch.vaultLimit) * 100;
 
@@ -51,7 +65,7 @@ const BranchView = {
     const branchActions = `
       <div class="form-group" style="margin: 0; min-width: 220px;">
         <select id="branch-select" class="form-control">
-          ${state.branches.map(b => `
+          ${branches.map(b => `
             <option value="${b.id}" ${b.id === currentBranch.id ? 'selected' : ''}>
               ${b.name} (${b.code})
             </option>
@@ -371,7 +385,7 @@ const BranchView = {
                   </tr>
                 </thead>
                 <tbody>
-                  ${currentBranch.tillBalances.map((t, idx) => `
+                  ${tillBalances.map((t, idx) => `
                     <tr>
                       <td>
                         <div style="font-weight: 600; font-size: 0.85rem;">${t.tellerName}</div>
@@ -393,7 +407,7 @@ const BranchView = {
               </table>
             </div>
             <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 0.75rem; padding-top: 0.75rem; border-top: 1px solid var(--border-subtle); font-size: 0.82rem;">
-              <span style="color: var(--text-muted);">Total Float Across ${currentBranch.tillBalances.length} Drawers</span>
+              <span style="color: var(--text-muted);">Total Float Across ${tillBalances.length} Drawers</span>
               <span style="font-family: var(--font-mono); font-weight: 800; color: var(--accent-cyan);">${Formatter.money(totalTillCash)}</span>
             </div>
           </div>

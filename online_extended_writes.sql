@@ -103,6 +103,14 @@ BEGIN
                 created_by TEXT NOT NULL,
                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
             );
+            CREATE TABLE IF NOT EXISTS %1$I.domain_action_idempotency (
+                idempotency_key TEXT PRIMARY KEY,
+                action TEXT NOT NULL,
+                actor_user_id TEXT NOT NULL,
+                payload JSONB NOT NULL,
+                result JSONB NOT NULL,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            );
             CREATE INDEX IF NOT EXISTS loan_applications_branch_idx ON %1$I.loan_applications(branch_id, applied_at DESC);
             CREATE INDEX IF NOT EXISTS workflow_tasks_pending_idx ON %1$I.workflow_tasks(status, created_at DESC);
         $ddl$, tenant.schema_name);
@@ -113,7 +121,7 @@ BEGIN
         FOREACH table_name IN ARRAY ARRAY[
             'loan_products', 'loan_applications', 'workflow_tasks',
             'external_facilities', 'operating_expenses', 'branch_reconciliations',
-            'investment_positions'
+            'investment_positions', 'domain_action_idempotency'
         ] LOOP
             EXECUTE format('ALTER TABLE %I.%I ENABLE ROW LEVEL SECURITY', tenant.schema_name, table_name);
             EXECUTE format('REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON %I.%I FROM authenticated', tenant.schema_name, table_name);
@@ -121,6 +129,7 @@ BEGIN
         EXECUTE format('GRANT SELECT ON %I.loan_products, %I.loan_applications, %I.workflow_tasks, %I.external_facilities, %I.operating_expenses, %I.branch_reconciliations, %I.investment_positions TO authenticated',
             tenant.schema_name, tenant.schema_name, tenant.schema_name, tenant.schema_name,
             tenant.schema_name, tenant.schema_name, tenant.schema_name);
+        EXECUTE format('REVOKE ALL ON %I.domain_action_idempotency FROM authenticated',tenant.schema_name);
 
         EXECUTE format('DROP POLICY IF EXISTS online_loan_products_read ON %I.loan_products', tenant.schema_name);
         EXECUTE format('CREATE POLICY online_loan_products_read ON %I.loan_products FOR SELECT TO authenticated USING (%I.org_has_permission(''ORIGINATE_LOAN_APP'') OR %I.org_has_permission(''APPROVE_CREDIT_FACILITY'') OR %I.org_has_permission(''READ_ALL_MODULES''))',
@@ -162,6 +171,7 @@ DECLARE
     v_schema TEXT;
     v_user_id TEXT;
     v_result JSONB;
+    v_extended_ready BOOLEAN;
 BEGIN
     SELECT schema_name INTO v_schema
     FROM public.organizations
@@ -170,6 +180,15 @@ BEGIN
     IF v_schema IS NULL THEN RAISE EXCEPTION 'Active organization not found.'; END IF;
     EXECUTE format('SELECT %I.org_current_user_id()', v_schema) INTO v_user_id;
     IF v_user_id IS NULL THEN RAISE EXCEPTION 'An active organization user is required.'; END IF;
+    v_extended_ready :=
+        to_regclass(format('%I.loan_products',v_schema)) IS NOT NULL
+        AND to_regclass(format('%I.loan_applications',v_schema)) IS NOT NULL
+        AND to_regclass(format('%I.workflow_tasks',v_schema)) IS NOT NULL
+        AND to_regclass(format('%I.external_facilities',v_schema)) IS NOT NULL
+        AND to_regclass(format('%I.operating_expenses',v_schema)) IS NOT NULL
+        AND to_regclass(format('%I.branch_reconciliations',v_schema)) IS NOT NULL
+        AND to_regclass(format('%I.investment_positions',v_schema)) IS NOT NULL
+        AND to_regclass(format('%I.domain_action_idempotency',v_schema)) IS NOT NULL;
     EXECUTE format($sql$
         SELECT jsonb_build_object(
             'member_create', %1$I.org_has_permission('MANAGE_USERS') OR %1$I.org_has_permission('APPROVE_BRANCH_LOAN_TIER1'),
@@ -187,6 +206,14 @@ BEGIN
             'user_manage', %1$I.org_has_permission('MANAGE_USERS')
         )
     $sql$, v_schema) INTO v_result;
+    IF NOT v_extended_ready THEN
+        v_result := v_result || jsonb_build_object(
+            'credit_application',false,'credit_admin',false,'credit_release',false,
+            'treasury_drawdown',false,'treasury_invest',false,'opex_manage',false,
+            'branch_reconcile',false,'till_reconcile',false,'portfolio_provision',false,
+            'user_manage',false
+        );
+    END IF;
     RETURN v_result;
 END;
 $$;
@@ -400,6 +427,12 @@ DECLARE
     v_till_count INTEGER;
     v_till_user_match BOOLEAN;
     v_till_id TEXT;
+    v_existing_reference TEXT;
+    v_existing_action TEXT;
+    v_saved_action TEXT;
+    v_saved_actor TEXT;
+    v_saved_payload JSONB;
+    v_saved_result JSONB;
     v_status TEXT;
     v_reason TEXT;
     v_batch TEXT;
@@ -437,13 +470,35 @@ BEGIN
         v_can_opex, v_can_reconcile, v_can_till, v_can_users, v_can_read_all, v_can_release;
     IF v_user_id IS NULL THEN RAISE EXCEPTION 'An active organization user is required.'; END IF;
 
+    PERFORM pg_advisory_xact_lock(hashtextextended(p_org_id || ':domain:' || v_key, 0));
+    EXECUTE format(
+        'SELECT action,actor_user_id,payload,result FROM %I.domain_action_idempotency WHERE idempotency_key=$1',
+        v_schema
+    ) INTO v_saved_action,v_saved_actor,v_saved_payload,v_saved_result USING v_key;
+    IF v_saved_action IS NOT NULL THEN
+        IF v_saved_action IS DISTINCT FROM p_action
+           OR v_saved_actor IS DISTINCT FROM v_user_id
+           OR v_saved_payload IS DISTINCT FROM p_payload THEN
+            RAISE EXCEPTION 'Idempotency key was already used for a different operation.';
+        END IF;
+        RETURN v_saved_result;
+    END IF;
+
     CASE p_action
         WHEN 'create_loan_product' THEN
             IF NOT COALESCE(v_can_credit, false) THEN RAISE EXCEPTION 'Credit product administration permission is required.'; END IF;
             v_id := 'PROD-' || v_key;
             EXECUTE format('SELECT to_jsonb(p) FROM %I.loan_products p WHERE id=$1',v_schema)
                 INTO v_product USING v_id;
-            IF v_product IS NOT NULL THEN RETURN v_product; END IF;
+            IF v_product IS NOT NULL THEN
+                IF v_product->>'created_by' IS DISTINCT FROM v_user_id
+                   OR v_product->>'name' IS DISTINCT FROM BTRIM(p_payload->>'name')
+                   OR (v_product->>'annual_interest_rate')::NUMERIC IS DISTINCT FROM (p_payload->>'annualInterestRate')::NUMERIC
+                   OR v_product->>'repayment_method' IS DISTINCT FROM p_payload->>'repaymentMethod' THEN
+                    RAISE EXCEPTION 'Idempotency key was already used for a different product.';
+                END IF;
+                RETURN v_product;
+            END IF;
             IF EXISTS (SELECT 1 FROM jsonb_object_keys(p_payload) k WHERE k NOT IN
                 ('name','annualInterestRate','repaymentMethod','penaltyGraceDays','penaltyFixedFee','penaltyDailyRate')) THEN
                 RAISE EXCEPTION 'Unexpected loan product fields.';
@@ -451,6 +506,9 @@ BEGIN
             IF NULLIF(BTRIM(p_payload->>'name'), '') IS NULL OR length(BTRIM(p_payload->>'name')) > 80 THEN
                 RAISE EXCEPTION 'A loan product name of at most 80 characters is required.';
             END IF;
+            PERFORM pg_advisory_xact_lock(hashtextextended(
+                p_org_id||':loan-product:'||lower(BTRIM(p_payload->>'name')),0
+            ));
             v_rate := (p_payload->>'annualInterestRate')::NUMERIC;
             v_grace_days := COALESCE(NULLIF(p_payload->>'penaltyGraceDays','')::INTEGER, 0);
             IF v_rate < 0 OR v_rate > 1000 OR v_grace_days < 0 OR v_grace_days > 3650
@@ -532,7 +590,16 @@ BEGIN
             v_task_id := 'WF-' || v_key;
             EXECUTE format('SELECT to_jsonb(a) FROM %I.loan_applications a WHERE id=$1',v_schema)
                 INTO v_app USING v_id;
-            IF v_app IS NOT NULL THEN RETURN v_app; END IF;
+            IF v_app IS NOT NULL THEN
+                IF v_app->>'maker_user_id' IS DISTINCT FROM v_user_id
+                   OR v_app->>'member_id' IS DISTINCT FROM v_member_id
+                   OR v_app->>'product_id' IS DISTINCT FROM v_product_id
+                   OR (v_app->>'amount')::NUMERIC IS DISTINCT FROM v_amount
+                   OR (v_app->>'term_months')::INTEGER IS DISTINCT FROM v_m THEN
+                    RAISE EXCEPTION 'Idempotency key was already used for a different loan application.';
+                END IF;
+                RETURN v_app;
+            END IF;
             v_policy := jsonb_build_object(
                 'graceDays',COALESCE((v_product->>'penaltyGraceDays')::INTEGER,0),
                 'fixedFee',COALESCE((v_product->>'penaltyFixedFee')::NUMERIC,0),
@@ -604,6 +671,9 @@ BEGIN
                 RAISE EXCEPTION 'Application exceeds the operator single-approval limit.';
             END IF;
             IF v_status='Approve' AND v_daily_limit>0 THEN
+                PERFORM pg_advisory_xact_lock(hashtextextended(
+                    p_org_id||':loan-approval:'||v_user_id||':'||CURRENT_DATE::TEXT,0
+                ));
                 EXECUTE format('SELECT COALESCE(SUM(amount),0) FROM %I.loan_applications WHERE approved_by=$1 AND approved_at::DATE=CURRENT_DATE',v_schema)
                     INTO v_amount USING v_user_id;
                 IF COALESCE(v_amount,0)+(v_app->>'amount')::NUMERIC>v_daily_limit THEN
@@ -781,7 +851,14 @@ BEGIN
             v_id := 'DFI-'||v_key;
             EXECUTE format('SELECT to_jsonb(f) FROM %I.external_facilities f WHERE id=$1',v_schema)
                 INTO v_facility USING v_id;
-            IF v_facility IS NOT NULL THEN RETURN v_facility; END IF;
+            IF v_facility IS NOT NULL THEN
+                IF v_facility->>'created_by' IS DISTINCT FROM v_user_id
+                   OR v_facility->>'lender' IS DISTINCT FROM BTRIM(p_payload->>'lender')
+                   OR (v_facility->>'total_commitment')::NUMERIC IS DISTINCT FROM (p_payload->>'commitment')::NUMERIC THEN
+                    RAISE EXCEPTION 'Idempotency key was already used for a different facility.';
+                END IF;
+                RETURN v_facility;
+            END IF;
             v_amount := (p_payload->>'commitment')::NUMERIC;
             v_rate := COALESCE((p_payload->>'interestRate')::NUMERIC,0);
             IF NULLIF(BTRIM(p_payload->>'lender'),'') IS NULL
@@ -840,7 +917,14 @@ BEGIN
             v_id := 'OPX-'||v_key;
             EXECUTE format('SELECT to_jsonb(o) FROM %I.operating_expenses o WHERE id=$1',v_schema)
                 INTO v_result USING v_id;
-            IF v_result IS NOT NULL THEN RETURN v_result; END IF;
+            IF v_result IS NOT NULL THEN
+                IF v_result->>'created_by' IS DISTINCT FROM v_user_id
+                   OR v_result->>'category' IS DISTINCT FROM BTRIM(p_payload->>'category')
+                   OR (v_result->>'monthly_amount')::NUMERIC IS DISTINCT FROM v_amount THEN
+                    RAISE EXCEPTION 'Idempotency key was already used for a different expense schedule.';
+                END IF;
+                RETURN v_result;
+            END IF;
             EXECUTE format('INSERT INTO %I.operating_expenses(id,category,monthly_amount,due_day,created_by) VALUES($1,$2,$3,$4,$5) RETURNING to_jsonb(operating_expenses)',v_schema)
                 INTO v_result USING v_id,BTRIM(p_payload->>'category'),v_amount,v_due_day,v_user_id;
             v_result := jsonb_build_object('id',v_id,'category',v_result->>'category',
@@ -862,7 +946,14 @@ BEGIN
             v_id := 'REC-'||v_key;
             EXECUTE format('SELECT to_jsonb(r) FROM %I.branch_reconciliations r WHERE id=$1',v_schema)
                 INTO v_result USING v_id;
-            IF v_result IS NOT NULL THEN RETURN v_result; END IF;
+            IF v_result IS NOT NULL THEN
+                IF v_result->>'operator_id' IS DISTINCT FROM v_user_id
+                   OR v_result->>'branch_id' IS DISTINCT FROM v_branch_id
+                   OR (v_result->>'cash_in_vault')::NUMERIC IS DISTINCT FROM v_amount THEN
+                    RAISE EXCEPTION 'Idempotency key was already used for a different vault count.';
+                END IF;
+                RETURN v_result;
+            END IF;
             EXECUTE format('UPDATE %I.branches SET "cashInVault"=$2,"lastReconciledAt"=NOW()::TEXT,"reconciliationDiscrepancy"=$2-COALESCE("cashInVault",0) WHERE id=$1',v_schema)
                 USING v_branch_id,v_amount;
             EXECUTE format('INSERT INTO %I.branch_reconciliations(id,branch_id,operator_id,cash_in_vault,prior_cash_in_vault,notes) VALUES($1,$2,$3,$4,$5,$6)',v_schema)
@@ -901,6 +992,11 @@ BEGIN
             EXECUTE format('SELECT to_jsonb(i) FROM %I.investment_positions i WHERE id=$1',v_schema)
                 INTO v_position USING v_id;
             IF v_position IS NOT NULL THEN
+                IF v_position->>'created_by' IS DISTINCT FROM v_user_id
+                   OR v_position->>'institution' IS DISTINCT FROM BTRIM(p_payload->>'institution')
+                   OR (v_position->>'principal')::NUMERIC IS DISTINCT FROM (p_payload->>'principal')::NUMERIC THEN
+                    RAISE EXCEPTION 'Idempotency key was already used for a different investment.';
+                END IF;
                 RETURN public.execute_tenant_financial_action(p_org_id,'investment_placement',
                     (v_position->>'principal')::NUMERIC,'Treasury investment placement',
                     v_key,NULL,NULL,v_id);
@@ -927,16 +1023,33 @@ BEGIN
         WHEN 'redeem_investment' THEN
             IF NOT COALESCE(v_can_invest,false) THEN RAISE EXCEPTION 'Treasury investment permission is required.'; END IF;
             v_id := NULLIF(p_payload->>'investmentId','');
+            IF v_id IS NULL THEN RAISE EXCEPTION 'Investment ID is required.'; END IF;
+            EXECUTE format('SELECT to_jsonb(i) FROM %I.investment_positions i WHERE id=$1 FOR UPDATE',v_schema)
+                INTO v_position USING v_id;
+            IF v_position IS NULL THEN RAISE EXCEPTION 'Investment not found.'; END IF;
             EXECUTE format('SELECT to_jsonb(tx) FROM %I.transactions tx WHERE tx.id=$1',v_schema)
                 INTO v_result USING 'TX-'||v_key;
             IF v_result IS NOT NULL THEN
+                BEGIN
+                    v_existing_reference := (v_result->>'details')::JSONB->>'referenceId';
+                    v_existing_action := (v_result->>'details')::JSONB->>'action';
+                EXCEPTION WHEN OTHERS THEN
+                    v_existing_reference := NULL;
+                    v_existing_action := NULL;
+                END;
+                IF v_result->>'postedBy' IS DISTINCT FROM v_user_id
+                   OR v_result->>'type' IS DISTINCT FROM 'Treasury Investment Redemption'
+                   OR (v_result->>'amount')::NUMERIC IS DISTINCT FROM
+                        (v_position->>'principal')::NUMERIC
+                   OR v_existing_reference IS DISTINCT FROM v_id
+                   OR v_existing_action IS DISTINCT FROM 'investment_redemption' THEN
+                    RAISE EXCEPTION 'Idempotency key was already used for a different investment redemption.';
+                END IF;
                 RETURN public.execute_tenant_financial_action(p_org_id,'investment_redemption',
                     (v_result->>'amount')::NUMERIC,'Treasury investment redemption',v_key,
-                    NULL,NULL,v_result->>'referenceId');
+                    NULL,NULL,v_existing_reference);
             END IF;
-            EXECUTE format('SELECT to_jsonb(i) FROM %I.investment_positions i WHERE id=$1 FOR UPDATE',v_schema)
-                INTO v_position USING v_id;
-            IF v_position IS NULL OR v_position->>'status' <> 'Active' THEN RAISE EXCEPTION 'Active investment not found.'; END IF;
+            IF v_position->>'status' <> 'Active' THEN RAISE EXCEPTION 'Active investment not found.'; END IF;
             v_amount := (v_position->>'principal')::NUMERIC;
             EXECUTE format('UPDATE %I.investment_positions SET status=''Redeemed'' WHERE id=$1',v_schema) USING v_id;
             v_result := public.execute_tenant_financial_action(p_org_id,'investment_redemption',v_amount,
@@ -1010,7 +1123,12 @@ BEGIN
     USING v_audit_id,v_user_id,v_user_name,v_status,
         COALESCE(v_result->>'id',v_result->>'applicationId',v_result->>'transactionId',p_action),
         COALESCE(p_payload->>'notes',p_payload->>'reason',p_payload->>'purpose',p_action);
-    RETURN v_result || jsonb_build_object('auditId',v_audit_id);
+    v_result := v_result || jsonb_build_object('auditId',v_audit_id);
+    EXECUTE format(
+        'INSERT INTO %I.domain_action_idempotency(idempotency_key,action,actor_user_id,payload,result) VALUES($1,$2,$3,$4,$5)',
+        v_schema
+    ) USING v_key,p_action,v_user_id,p_payload,v_result;
+    RETURN v_result;
 END;
 $$;
 

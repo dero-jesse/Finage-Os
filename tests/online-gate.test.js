@@ -20,7 +20,8 @@ function createLocalStorage(initial = {}) {
 function loadPlatform(remoteRows, {
   importResponse = { success: true },
   capabilities = { member_create: false, counter_post: false, manual_journal: false },
-  writeResponse = { id: 'TX-online-1', type: 'Teller Deposit', amount: 5 }
+  writeResponse = { id: 'TX-online-1', type: 'Teller Deposit', amount: 5 },
+  domainResponse = { id: 'server-operation-1' }
 } = {}) {
   const localStorage = createLocalStorage();
   const state = {};
@@ -51,6 +52,8 @@ function loadPlatform(remoteRows, {
         remoteRows.transactions.push({ ...writeResponse, postedBy: 'USR-test' });
         return { data: writeResponse, error: null };
       }
+      if (name === 'execute_tenant_domain_action') return { data: domainResponse, error: null };
+      if (name === 'execute_tenant_financial_action') return { data: writeResponse, error: null };
       if (name === 'import_legacy_tenant_state' && importResponse.success) {
         remoteRows.branches = args.p_org_data.branches;
         remoteRows.members = args.p_org_data.members;
@@ -237,6 +240,57 @@ test('online operation capability failures keep APIs blocked and surfaced', asyn
     roles: [], users: [], branches: [], members: [], general_ledger: [],
     transactions: [], audit_trail: []
   });
+
+  test('extended tenant reads map credit, workflow, funding, expense and investment records from Supabase', async () => {
+    const remoteRows = {
+      roles: [], users: [], branches: [{ id: 'br-1', name: 'Branch' }],
+      members: [{ id: 'mem-1', name: 'Remote member', branchId: 'br-1', activeLoans: [] }],
+      general_ledger: [], transactions: [], audit_trail: [],
+      loan_products: [{ id: 'prod-1', name: 'Remote product', annual_interest_rate: 12, repayment_method: 'reducing', policy_version: 4 }],
+      loan_applications: [{ id: 'app-1', member_id: 'mem-1', product_id: 'prod-1', amount: 100, status: 'Application Submitted', workflow_task_id: 'wf-1' }],
+      workflow_tasks: [{ id: 'wf-1', type: 'Loan Application Review', entity_id: 'app-1', status: 'Pending Checker Release', history: [] }],
+      external_facilities: [{ id: 'dfi-1', lender: 'Remote lender', total_commitment: 1000, drawn_amount: 200 }],
+      operating_expenses: [{ id: 'opx-1', category: 'Rent', monthly_amount: 20, due_day: 5 }],
+      branch_reconciliations: [{ id: 'rec-1', cash_in_vault: 50 }],
+      investment_positions: [{ id: 'inv-1', institution: 'Bank', product: 'T-bill', principal: 80, status: 'Active' }]
+    };
+    const { platform, state } = loadPlatform(remoteRows, {
+      capabilities: { credit_application: true, credit_admin: true, treasury_drawdown: true }
+    });
+    await platform.loadOperationalData();
+    assert.equal(state.loanProducts[0].annualInterestRate, 12);
+    assert.equal(state.disbursementQueue[0].workflowTaskId, 'wf-1');
+    assert.equal(state.workflowTasks[0].entityId, 'app-1');
+    assert.equal(state.externalFacilities[0].availableToDraw, 800);
+    assert.equal(state.operatingExpenses[0].monthlyAmount, 20);
+    assert.equal(state.shortTermInvestments[0].principal, 80);
+    assert.equal(platform.context.writeCapabilities.credit_application, true);
+    assert.equal(platform.context.writeCapabilities.credit_release, false);
+  });
+
+  test('extended operations wait for an authorized server RPC and do not mutate local records', async () => {
+    const remoteRows = {
+      roles: [], users: [], branches: [], members: [], general_ledger: [],
+      transactions: [], audit_trail: [], loan_products: [], loan_applications: [],
+      workflow_tasks: [], external_facilities: [], operating_expenses: [],
+      branch_reconciliations: [], investment_positions: []
+    };
+    const { platform, state, calls, getNotificationCount } = loadPlatform(remoteRows, {
+      capabilities: { credit_application: true, credit_admin: true }
+    });
+    await platform.loadOperationalData();
+    const notifications = getNotificationCount();
+    const result = await platform.executeDomainAction('create_loan_application', {
+      memberId: 'member-1', productId: 'product-1', amount: 1, termMonths: 1, purpose: 'test'
+    }, { idempotencyKey: 'stable-domain-key-001', notify: false });
+    assert.equal(result.result.id, 'server-operation-1');
+    assert.equal(state.disbursementQueue.length, 0);
+    assert.equal(getNotificationCount(), notifications);
+    const call = calls.find(item => item.name === 'execute_tenant_domain_action');
+    assert.equal(call.args.p_action, 'create_loan_application');
+    assert.equal(call.args.p_idempotency_key, 'stable-domain-key-001');
+    await assert.rejects(platform.executeDomainAction('update_user_roles', {}, {}), /not enabled/i);
+  });
   await platform.loadOperationalData();
   await assert.rejects(platform.createMember({ name: 'No', nationalId: 'N', phone: '1', branchId: 'b' }), /not enabled/i);
   await assert.rejects(platform.postFinancialTransaction({
@@ -270,4 +324,25 @@ test('SQL migrations expose only authenticated, authorized atomic writes', () =>
   assert.match(writes, /audit_trail/);
   assert.match(writes, /GRANT EXECUTE ON FUNCTION public\.post_tenant_financial_transaction/);
   assert.match(writes, /REVOKE ALL ON FUNCTION public\.create_tenant_member/);
+
+  const extended = read('online_extended_writes.sql');
+  assert.match(extended, /CREATE TABLE IF NOT EXISTS %1\$I\.loan_applications/);
+  assert.match(extended, /CREATE TABLE IF NOT EXISTS %1\$I\.workflow_tasks/);
+  assert.match(extended, /CREATE TABLE IF NOT EXISTS %1\$I\.investment_positions/);
+  assert.match(extended, /CREATE OR REPLACE FUNCTION public\.execute_tenant_domain_action/);
+  assert.match(extended, /CREATE OR REPLACE FUNCTION public\.execute_tenant_financial_action/);
+  assert.match(extended, /CREATE TABLE IF NOT EXISTS %1\$I\.domain_action_idempotency/);
+  assert.match(extended, /:domain:' \|\| v_key/);
+  assert.match(extended, /v_saved_payload IS DISTINCT FROM p_payload/);
+  assert.match(extended, /INSERT INTO %I\.domain_action_idempotency/);
+  assert.match(extended, /to_regclass\(format\('%I\.domain_action_idempotency',v_schema\)\) IS NOT NULL/);
+  assert.match(extended, /A maker cannot approve or reject their own application/);
+  assert.match(extended, /Only an overdue unpaid instalment can receive a penalty assessment/);
+  assert.match(extended, /v_extended_ready :=/);
+  assert.match(extended, /'credit_application',false/);
+  assert.match(extended, /loan-approval:/);
+  assert.match(extended, /Idempotency key was already used for a different investment redemption/);
+  assert.match(extended, /You cannot grant permissions that you do not hold/);
+  assert.match(extended, /REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON %I.%I FROM authenticated/);
+  assert.doesNotMatch(extended, /p_full_state|p_state_snapshot|replace_tenant_state/i);
 });

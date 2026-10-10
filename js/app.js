@@ -270,7 +270,7 @@ const App = {
       details = context.operationalError || 'The tenant records visible to this authenticated account were loaded from Supabase. Operational workflows remain read-only until their permission-specific, atomic server write APIs are deployed. No browser-side write is accepted as success.';
     } else if (status === 'partial') {
       heading = 'Limited online operations enabled';
-      details = 'Only the operations listed below have deployed, permission-checked Supabase RPCs. Other teller, credit, workflow, treasury, setup and administration actions remain blocked.';
+      details = 'Only operations shown below and confirmed by the permission-specific Supabase capability response are enabled. Other teller, credit, workflow, treasury, setup and administration actions remain blocked.';
     } else if (status === 'error') {
       heading = 'Unable to verify online data';
       details = context.operationalError || 'Supabase tenant data could not be loaded. Operations are blocked.';
@@ -355,7 +355,8 @@ const App = {
       return `<div style="display:flex;align-items:center;justify-content:space-between;gap:.7rem;padding:.65rem;border:1px solid #e2e8f0;border-radius:8px;">
         <div><strong>${escapeHtml(app.id)} · ${escapeHtml(app.clientName)}</strong><div style="font-size:.76rem;color:#64748b;">${escapeHtml(app.product)} · ${escapeHtml(app.status)} · ${escapeHtml(workflow?.makerCheckerStatus || '')} · ${Formatter.money(app.amount)}</div></div>
         <div>${isPending && caps.credit_admin ? `<button type="button" data-domain-review="Approve" data-app-id="${escapeHtml(app.id)}">Approve</button> <button type="button" data-domain-review="Reject" data-app-id="${escapeHtml(app.id)}">Reject</button>` : ''}
-        ${app.status === 'Approved - Pending Pacing' && caps.credit_admin ? `<select data-domain-batch="${escapeHtml(app.id)}"><option value="">Pacing</option><option>Batch 1</option><option>Batch 2</option><option>Batch 3</option></select><button type="button" data-domain-disburse="${escapeHtml(app.id)}">Disburse</button>` : ''}</div></div>`;
+        ${app.status === 'Approved - Pending Pacing' && caps.credit_admin ? `<select data-domain-batch="${escapeHtml(app.id)}"><option value="">Pacing</option><option>Batch 1</option><option>Batch 2</option><option>Batch 3</option></select>` : ''}
+        ${app.status === 'Approved - Pending Pacing' && (caps.credit_admin || caps.credit_release) ? `<button type="button" data-domain-disburse="${escapeHtml(app.id)}">Disburse</button>` : ''}</div></div>`;
     }).join('') || '<p>No loan applications.</p>';
     const overdueOptions = members.flatMap(member => (member.activeLoans || []).flatMap(loan =>
       (loan.repaymentSchedule || []).filter(item => item.status !== 'Paid' && item.dueDate && item.dueDate < new Date().toISOString().slice(0, 10))
@@ -395,7 +396,7 @@ const App = {
               <input name="amount" type="number" min="0.01" step="0.01" required placeholder="Amount" aria-label="Amount">
               <input name="description" placeholder="Reference / description" aria-label="Reference">
             </div>
-            <p style="font-size:.74rem;color:#64748b;">Cash is posted against GL 1010 / 2010 or 1200, member balances and the authenticated operator's assigned branch/till. Supabase validates till cash, member savings, loan ownership and balances atomically. This bounded phase uses the selected member/amount; denomination capture, till management and reconciliation remain disabled.</p>
+            <p style="font-size:.74rem;color:#64748b;">Cash is posted against GL 1010 / 2010 or 1200, member balances and the authenticated operator's assigned branch/till. Supabase validates till cash, member savings, loan ownership and balances atomically. This bounded phase uses the selected member/amount; denomination-based posting and teller assignment remain disabled. Separate capability-gated forms below support physical vault and the logged-in operator's assigned-till counts.</p>
             <button type="submit" style="padding:.6rem .9rem;border:0;border-radius:8px;background:#0f766e;color:#fff;font-weight:700;">Post to Supabase</button>
             <div class="online-form-result" role="status"></div>
           </form>` : ''}

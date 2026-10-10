@@ -1947,6 +1947,10 @@ class FinageStore {
     throw new Error('Batch ingestion is not enabled; transactions must be individually server-authorized and idempotent.');
   }
 
+  postTransaction() {
+    return this._rejectLocalOperationalWrite();
+  }
+
   getCleanState() {
     const base = this.getDefaultState();
     

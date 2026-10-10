@@ -20,6 +20,8 @@ function createLocalStorage(initial = {}) {
 function loadPlatform(remoteRows, {
   importResponse = { success: true },
   capabilities = { member_create: false, counter_post: false, manual_journal: false },
+  capabilityError = null,
+  readErrors = {},
   writeResponse = { id: 'TX-online-1', type: 'Teller Deposit', amount: 5 },
   domainResponse = { id: 'server-operation-1' }
 } = {}) {
@@ -34,7 +36,7 @@ function loadPlatform(remoteRows, {
           return {
             select: async () => ({
               data: remoteRows[table] || [],
-              error: null
+              error: readErrors[table] || null
             })
           };
         }
@@ -42,7 +44,7 @@ function loadPlatform(remoteRows, {
     },
     rpc: async (name, args) => {
       calls.push({ name, args });
-      if (name === 'online_write_capabilities') return { data: capabilities, error: null };
+      if (name === 'online_write_capabilities') return { data: capabilities, error: capabilityError };
       if (name === 'create_tenant_member') {
         const member = { id: 'MEM-online-1', savingsBalance: 0, activeLoans: [], ...args.p_member };
         remoteRows.members.push(member);
@@ -127,6 +129,36 @@ test('tenant reads are loaded from Supabase and operational data stays read-only
   assert.deepEqual(Array.from(state.members, member => member.id), ['mem-1']);
   assert.equal(state.generalLedger[0].balance, 200);
   assert.equal(state.transactions[0].id, 'tx-1');
+});
+
+test('connected tenant statuses allow workspace access without treating failed loads as online', () => {
+  const { platform } = loadPlatform({});
+
+  for (const status of ['partial', 'read_only', 'ready']) {
+    platform.context.operationalStatus = status;
+    assert.equal(platform.hasOperationalAccess(), true, `${status} should permit connected workspace access`);
+  }
+
+  for (const status of ['loading', 'no_org', 'empty', 'error']) {
+    platform.context.operationalStatus = status;
+    assert.equal(platform.hasOperationalAccess(), false, `${status} should remain blocked`);
+  }
+});
+
+test('missing online capabilities and tenant services are surfaced after core data loads', async () => {
+  const { platform } = loadPlatform({
+    branches: [{ id: 'branch-1', name: 'Main Branch' }]
+  }, {
+    capabilityError: { message: 'function not found' },
+    readErrors: { workflow_tasks: { message: 'table not found' } }
+  });
+
+  await platform.loadOperationalData();
+
+  assert.equal(platform.context.operationalStatus, 'read_only');
+  assert.match(platform.context.operationalError, /function not found/);
+  assert.equal(platform.context.operationalWarnings[0].service, 'workflow_tasks');
+  assert.match(platform.context.operationalWarnings[0].message, /table not found/);
 });
 
 test('one-time import is explicit and removes the legacy cache only after server acceptance', async () => {
@@ -300,6 +332,8 @@ test('online operation capability failures keep APIs blocked and surfaced', asyn
 
 test('SQL migrations expose only authenticated, authorized atomic writes', () => {
   const sql = read('online_data_migration.sql');
+  assert.match(sql, /extensions\.uuid_generate_v4\(\)/);
+  assert.match(read('platform_schema.sql'), /extensions\.uuid_generate_v4\(\)/);
   assert.match(sql, /SECURITY DEFINER/);
   assert.match(sql, /org_has_permission\(''MANAGE_USERS''\)/);
   assert.match(sql, /LOCK TABLE %1\$I\.branches.*ACCESS EXCLUSIVE MODE/s);
@@ -310,6 +344,7 @@ test('SQL migrations expose only authenticated, authorized atomic writes', () =>
   assert.match(sql, /REVOKE ALL ON FUNCTION public\.import_legacy_tenant_state\(TEXT, JSONB\) FROM PUBLIC, anon/);
 
   const writes = read('online_financial_writes.sql');
+  assert.match(writes, /extensions\.uuid_generate_v4\(\)/);
   assert.match(writes, /SECURITY DEFINER/);
   assert.match(writes, /org_current_user_id/);
   assert.match(writes, /org_has_permission\(''POST_COUNTER_TX''\)/);
@@ -326,6 +361,7 @@ test('SQL migrations expose only authenticated, authorized atomic writes', () =>
   assert.match(writes, /REVOKE ALL ON FUNCTION public\.create_tenant_member/);
 
   const extended = read('online_extended_writes.sql');
+  assert.match(extended, /extensions\.uuid_generate_v4\(\)/);
   assert.match(extended, /CREATE TABLE IF NOT EXISTS %1\$I\.loan_applications/);
   assert.match(extended, /CREATE TABLE IF NOT EXISTS %1\$I\.workflow_tasks/);
   assert.match(extended, /CREATE TABLE IF NOT EXISTS %1\$I\.investment_positions/);
@@ -345,4 +381,14 @@ test('SQL migrations expose only authenticated, authorized atomic writes', () =>
   assert.match(extended, /You cannot grant permissions that you do not hold/);
   assert.match(extended, /REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON %I.%I FROM authenticated/);
   assert.doesNotMatch(extended, /p_full_state|p_state_snapshot|replace_tenant_state/i);
+});
+
+test('write-all access is explicit and READ_ALL_MODULES stays read-only', () => {
+  const roleWrites = read('online_role_based_writes.sql');
+  assert.match(roleWrites, /id = 'ROLE-ADMIN'/);
+  assert.match(roleWrites, /WRITE_ALL_MODULES/);
+  assert.doesNotMatch(roleWrites, /OR r\.permissions @> '\["READ_ALL_MODULES"\]'/);
+  assert.match(read('platform_schema.sql'), /OR r\.permissions @> '\["WRITE_ALL_MODULES"\]'/);
+  assert.match(read('js/store.js'), /id: 'ROLE-ADMIN'.*WRITE_ALL_MODULES/);
+  assert.match(read('js/views/setupWizardView.js'), /id: 'ROLE-ADMIN'.*WRITE_ALL_MODULES/);
 });

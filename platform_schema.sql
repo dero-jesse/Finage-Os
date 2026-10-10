@@ -405,7 +405,10 @@ BEGIN
                 JOIN %1$I.roles AS r ON r.id = assigned.role_id
                 WHERE u.auth_uid = auth.uid()
                   AND u.status = 'Active'
-                  AND r.permissions @> jsonb_build_array(p_permission)
+                  AND (
+                      r.permissions @> jsonb_build_array(p_permission)
+                      OR r.permissions @> '["WRITE_ALL_MODULES"]'::JSONB
+                  )
             );
         $fn$
     $ddl$, v_schema);
@@ -1071,7 +1074,7 @@ BEGIN
         RAISE EXCEPTION 'Import refused: duplicate identifiers exist in the selected browser records.';
     END IF;
 
-    v_batch_id := COALESCE(NULLIF(p_org_data->>'migrationBatchId', ''), 'LEGACY-' || uuid_generate_v4()::TEXT);
+    v_batch_id := COALESCE(NULLIF(p_org_data->>'migrationBatchId', ''), 'LEGACY-' || extensions.uuid_generate_v4()::TEXT);
     PERFORM public.apply_tenant_setup(p_org_id, p_org_data, true);
 
     EXECUTE format($sql$

@@ -19,7 +19,7 @@ const OrganizationSetupView = {
   },
 
   open() {
-    if (window.Platform?.context?.operationalStatus !== 'ready') {
+    if (!window.Platform?.hasOperationalAccess()) {
       App.showToast('Organization operational setup is blocked until its online write path is deployed.', 'danger');
       return;
     }

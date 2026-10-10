@@ -44,7 +44,7 @@ const SetupWizardView = {
 
   // ─── Default Roles ───────────────────────────────────────────────────────
   _defaultRoles: [
-    { id: 'ROLE-ADMIN',        name: 'System Administrator',            category: 'board',        permissions: ['READ_ALL_MODULES','MANAGE_USERS','REPORTS_ACCESS','POLICY_THRESHOLD_CONFIG','BOARD_ESCALATION_APPROVE','GOVERNANCE_OVERVIEW'] },
+    { id: 'ROLE-ADMIN',        name: 'System Administrator',            category: 'board',        permissions: ['READ_ALL_MODULES','WRITE_ALL_MODULES','MANAGE_USERS','REPORTS_ACCESS','POLICY_THRESHOLD_CONFIG','BOARD_ESCALATION_APPROVE','GOVERNANCE_OVERVIEW'] },
     { id: 'ROLE-BRANCH-MGR',  name: 'Branch Manager / FOSA Supervisor', category: 'front-office', permissions: ['VAULT_RECONCILE','APPROVE_BRANCH_LOAN_TIER1','TELLER_LIMIT_OVERRIDE','AUDIT_TELLER_ACTIVITY','REPORTS_ACCESS'] },
     { id: 'ROLE-TELLER',       name: 'Teller Desk Officer',             category: 'teller',       permissions: ['POST_COUNTER_TX','VIEW_MEMBER_BALANCE','MANAGE_ASSIGNED_TILL'] },
     { id: 'ROLE-CREDIT-MAKER', name: 'Credit Origination Officer',      category: 'credit',       permissions: ['ORIGINATE_LOAN_APP','KYC_RISK_SCORING','VIEW_PAR_METRICS'] },

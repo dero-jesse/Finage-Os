@@ -12,7 +12,9 @@ const App = {
   hasPermission(permission, state = store.state) {
     const user = store.getCurrentUser();
     return !!state.isAuthenticated && !!user && this.getUserRoles(state).some(role =>
-      role.permissions.includes('READ_ALL_MODULES') || role.permissions.includes(permission)
+      role.permissions.includes('READ_ALL_MODULES') ||
+      role.permissions.includes('WRITE_ALL_MODULES') ||
+      role.permissions.includes(permission)
     );
   },
 
@@ -21,7 +23,7 @@ const App = {
   },
 
   canAccessWorkspace(workspace, state = store.state) {
-    if (!state.isAuthenticated || window.Platform?.context?.operationalStatus !== 'ready') return false;
+    if (!state.isAuthenticated || !window.Platform?.hasOperationalAccess()) return false;
     const roles = this.getUserRoles(state);
     if (roles.some(role => role.permissions.includes('READ_ALL_MODULES'))) return true;
     const categories = workspace === 'teller' ? ['teller', 'counter-ops'] : [workspace];
@@ -29,17 +31,23 @@ const App = {
   },
 
   canUseInputTab(tab, state = store.state) {
-    if (!state.isAuthenticated || window.Platform?.context?.operationalStatus !== 'ready') return false;
+    if (!state.isAuthenticated || !window.Platform?.hasOperationalAccess()) return false;
     const roles = this.getUserRoles(state);
     const hasCategory = (...categories) => roles.some(role => categories.includes(role.category));
+    const capabilities = window.Platform.context.writeCapabilities || {};
+    const hasCapability = (...names) => names.some(name => capabilities[name] === true);
     const permissions = {
-      members: () => this.hasPermission('MANAGE_USERS', state) || hasCategory('front-office'),
-      transactions: () => this.hasPermission('POST_COUNTER_TX', state),
-      loans: () => this.hasAnyPermission(['ORIGINATE_LOAN_APP', 'APPROVE_CREDIT_FACILITY', 'APPROVE_BRANCH_LOAN_TIER1'], state),
-      dfi: () => this.hasAnyPermission(['EXECUTE_DFI_DRAWDOWN', 'MODIFY_GL_JOURNAL', 'PLACE_TBILLS'], state),
-      opex: () => this.hasAnyPermission(['MODIFY_GL_JOURNAL', 'EXECUTE_DFI_DRAWDOWN'], state),
-      bulk: () => this.hasAnyPermission(['POST_COUNTER_TX', 'MODIFY_GL_JOURNAL', 'APPROVE_CREDIT_FACILITY', 'ORIGINATE_LOAN_APP', 'EXECUTE_DFI_DRAWDOWN'], state),
-      journal: () => this.hasPermission('MODIFY_GL_JOURNAL', state)
+      members: () => hasCapability('member_create') &&
+        (this.hasPermission('MANAGE_USERS', state) || hasCategory('front-office')),
+      transactions: () => hasCapability('counter_post') && this.hasPermission('POST_COUNTER_TX', state),
+      loans: () => hasCapability('credit_application', 'credit_admin', 'credit_release') &&
+        this.hasAnyPermission(['ORIGINATE_LOAN_APP', 'APPROVE_CREDIT_FACILITY', 'APPROVE_BRANCH_LOAN_TIER1'], state),
+      dfi: () => hasCapability('treasury_drawdown') &&
+        this.hasAnyPermission(['EXECUTE_DFI_DRAWDOWN', 'MODIFY_GL_JOURNAL', 'PLACE_TBILLS'], state),
+      opex: () => hasCapability('opex_manage') &&
+        this.hasAnyPermission(['MODIFY_GL_JOURNAL', 'EXECUTE_DFI_DRAWDOWN'], state),
+      bulk: () => false,
+      journal: () => hasCapability('manual_journal') && this.hasPermission('MODIFY_GL_JOURNAL', state)
     };
     return !!permissions[tab]?.();
   },
@@ -50,8 +58,21 @@ const App = {
   },
 
   canOpenReports(state = store.state) {
-    return window.Platform?.context?.operationalStatus === 'ready' &&
+    return window.Platform?.hasOperationalAccess() &&
       this.hasAnyPermission(['REPORTS_ACCESS', 'MANAGE_USERS'], state);
+  },
+
+  getOperationalStatusLabel() {
+    switch (window.Platform?.context?.operationalStatus) {
+      case 'partial':
+        return 'Supabase · Limited operations';
+      case 'read_only':
+        return 'Supabase · Read-only';
+      case 'ready':
+        return 'Supabase · Online';
+      default:
+        return 'Supabase · Connecting';
+    }
   },
 
   init() {
@@ -158,7 +179,7 @@ const App = {
     if (this.viewport) {
       const needsWorkspace = state.isAuthenticated && state.hasPassedLanding && !this._needsOrgSelection();
       const shouldShowHeader = state.isAuthenticated && state.hasPassedLanding &&
-        !this._needsOrgSelection() && Platform?.context?.operationalStatus === 'ready';
+        !this._needsOrgSelection() && Platform?.hasOperationalAccess();
       const headerEl = document.querySelector('.top-header');
       if (headerEl) {
         headerEl.style.display = shouldShowHeader ? 'flex' : 'none';
@@ -189,7 +210,7 @@ const App = {
         return;
       }
 
-      if (Platform?.context?.operationalStatus !== 'ready') {
+      if (!Platform?.hasOperationalAccess()) {
         this.renderOnlineReadinessGate();
         return;
       }
@@ -841,6 +862,22 @@ const App = {
     const setupNotice = activeOrg?.setup_completed === false && canManageOrg
       ? `<section style="display:flex;align-items:center;justify-content:space-between;gap:1rem;padding:.75rem 1rem;background:#fffbeb;border-bottom:1px solid #fcd34d;color:#78350f;"><div><strong style="font-size:.8rem;">Organization setup is incomplete</strong><div style="font-size:.72rem;margin-top:2px;">Add branches, import existing members, balances, loans, or transaction history.</div></div><button id="btn-org-setup-start" class="btn btn-secondary btn-sm" type="button">Continue Setup</button></section>`
       : '';
+    const escapeNotice = value => String(value || '').replace(/[&<>"']/g, char => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    })[char]);
+    const onlineContext = window.Platform?.context || {};
+    const serviceIssues = [
+      onlineContext.operationalError,
+      ...(onlineContext.operationalWarnings || []).map(warning =>
+        `${warning.service}: ${warning.message}`
+      )
+    ].filter(Boolean);
+    const onlineNotice = serviceIssues.length
+      ? `<section role="status" style="padding:.75rem 1rem;background:#fff7ed;border-bottom:1px solid #fdba74;color:#7c2d12;">
+          <strong style="font-size:.8rem;">Some online services are unavailable; this workspace may be read-only.</strong>
+          <ul style="margin:.4rem 0 0;padding-left:1.2rem;font-size:.75rem;">${serviceIssues.map(issue => `<li>${escapeNotice(issue)}</li>`).join('')}</ul>
+        </section>`
+      : '';
 
     this.viewport.innerHTML = `
       <div class="workspace-shell">
@@ -850,11 +887,12 @@ const App = {
             <h1>${portalName} Workspace</h1>
           </div>
           <div class="workspace-context-actions">
-            <span class="workspace-pill workspace-pill--neutral">Live</span>
+            <span class="workspace-pill workspace-pill--neutral">${this.getOperationalStatusLabel()}</span>
             <span class="workspace-pill workspace-pill--highlight">${portalName}</span>
           </div>
         </header>
         ${setupNotice}
+        ${onlineNotice}
         <div id="workspace-body" class="workspace-body"></div>
       </div>
     `;
@@ -878,7 +916,7 @@ const App = {
       </div>
       <div class="workspace-context-actions">
         <span class="workspace-pill workspace-pill--neutral">${current.task}</span>
-        <span class="workspace-pill workspace-pill--highlight">Live</span>
+        <span class="workspace-pill workspace-pill--highlight">${this.getOperationalStatusLabel()}</span>
       </div>
     `;
   },
@@ -1224,12 +1262,12 @@ const App = {
     document.addEventListener('keydown', (e) => {
       if (e.altKey && (e.key === 'n' || e.key === 'N')) {
         e.preventDefault();
-      if (Platform?.context?.operationalStatus !== 'ready') return;
+      if (!Platform?.hasOperationalAccess()) return;
       InputModalView.open();
     }
     if (e.altKey && (e.key === 'u' || e.key === 'U')) {
       e.preventDefault();
-      if (Platform?.context?.operationalStatus !== 'ready') return;
+      if (!Platform?.hasOperationalAccess()) return;
         const currentUser = store.getCurrentUser();
         const currentRoleObjs = currentUser ? UserManagementEngine.getUserRoles(store.state, currentUser.id) : [];
         if (currentRoleObjs.some(r => r.permissions.includes('MANAGE_USERS'))) {

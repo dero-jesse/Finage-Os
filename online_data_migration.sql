@@ -109,7 +109,7 @@ BEGIN
         RAISE EXCEPTION 'Import refused: duplicate identifiers exist in the selected browser records.';
     END IF;
 
-    v_batch_id := COALESCE(NULLIF(p_org_data->>'migrationBatchId', ''), 'LEGACY-' || uuid_generate_v4()::TEXT);
+    v_batch_id := COALESCE(NULLIF(p_org_data->>'migrationBatchId', ''), 'LEGACY-' || extensions.uuid_generate_v4()::TEXT);
     PERFORM public.apply_tenant_setup(p_org_id, p_org_data, true);
 
     EXECUTE format($sql$

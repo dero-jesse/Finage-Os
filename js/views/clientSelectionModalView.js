@@ -53,7 +53,7 @@ const ClientSelectionModalView = {
             <span style="font-size: 0.75rem; font-family: var(--font-mono); color: var(--text-muted);" id="client-search-count">
               Loading records…
             </span>
-            <span class="badge badge-muted" style="font-size: 0.68rem;">Saved on this device</span>
+            <span class="badge badge-muted" style="font-size: 0.68rem;">Organization records</span>
           </div>
         </div>
       </div>
@@ -110,7 +110,7 @@ const ClientSelectionModalView = {
     });
 
     if (countLabel) {
-      countLabel.textContent = `Showing ${filtered.length} of ${all.length} locally saved records`;
+      countLabel.textContent = `Showing ${filtered.length} of ${all.length} organization records`;
     }
 
     if (filtered.length === 0) {
@@ -120,7 +120,7 @@ const ClientSelectionModalView = {
             No Locally Saved Records Found
           </div>
           <div style="font-size: 0.85rem; max-width: 420px; margin: 0 auto; line-height: 1.5;">
-            No member account matching <strong style="color: var(--text-main);">"${query}"</strong> was found in locally saved records.
+            No member account matching <strong style="color: var(--text-main);">"${query}"</strong> was found in the connected organization.
           </div>
         </div>
       `;

@@ -17,6 +17,7 @@ const Platform = {
     loadedFromRemote: false,
     operationalStatus: 'loading',
     operationalError: null,
+    operationalWarnings: [],
     operationalCounts: null,
     writeCapabilities: {
       member_create: false,
@@ -140,6 +141,10 @@ const Platform = {
     return this.context.executeFinancialAction.call(this, action, amount, description, options);
   },
 
+  hasOperationalAccess() {
+    return ['partial', 'read_only', 'ready'].includes(this.context.operationalStatus);
+  },
+
   // Bootstrap the verified Supabase identity, tenant authorization, and remote records.
   async init() {
     const preferredOrgId = localStorage.getItem('finage_active_org_id');
@@ -154,6 +159,7 @@ const Platform = {
     this.context.legacySelectedOrgId = preferredOrgId;
     this.context.operationalStatus = 'loading';
     this.context.operationalError = null;
+    this.context.operationalWarnings = [];
     this.context.operationalCounts = null;
     this.context.writeCapabilities = this.emptyWriteCapabilities();
     if (window.store?.prepareTenantState) {
@@ -294,6 +300,12 @@ const Platform = {
       if (this.context.currentOrgSchema !== schemaName) return false;
 
       const rows = results.map(result => result.error ? [] : (result.data || []));
+      this.context.operationalWarnings = results.slice(7).flatMap((result, index) =>
+        result.error ? [{
+          service: tables[index + 7],
+          message: result.error.message || 'Tenant service query failed.'
+        }] : []
+      );
       const [roles, users, branches, members, ledger, transactions, audit,
         loanProductRows, applicationRows, workflowRows, facilityRows, expenseRows,
         reconciliationRows, investmentRows] = rows;

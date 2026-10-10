@@ -349,7 +349,7 @@ BEGIN
     USING 'TX-' || v_key, v_tx_type, p_member_id, p_amount, COALESCE(p_description, v_tx_type),
         p_reference_id, p_action, v_debit_code, v_credit_code, v_key, v_user_id, v_branch_id, p_loan_id;
 
-    v_audit_id := 'AUD-' || uuid_generate_v4()::TEXT;
+    v_audit_id := 'AUD-' || extensions.uuid_generate_v4()::TEXT;
     EXECUTE format($sql$
         INSERT INTO %1$I.audit_trail
             (id, timestamp, "userId", "userName", action, module, "entityId", description, "ipAddress", "glImpact")
@@ -1114,7 +1114,7 @@ BEGIN
             RAISE EXCEPTION 'This tenant operation is not enabled.';
     END CASE;
 
-    v_audit_id := 'AUD-'||uuid_generate_v4()::TEXT;
+    v_audit_id := 'AUD-'||extensions.uuid_generate_v4()::TEXT;
     EXECUTE format($sql$
         INSERT INTO %1$I.audit_trail
             (id,timestamp,"userId","userName",action,module,"entityId",description,"ipAddress","glImpact")

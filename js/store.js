@@ -41,7 +41,7 @@ class FinageStore {
 
       // --- Centralized Role Dictionary (RBAC) ---
       roles: [
-        { id: 'ROLE-ADMIN', name: 'System Administrator', category: 'board', permissions: ['READ_ALL_MODULES', 'MANAGE_USERS', 'REPORTS_ACCESS', 'POLICY_THRESHOLD_CONFIG', 'BOARD_ESCALATION_APPROVE', 'GOVERNANCE_OVERVIEW'] },
+        { id: 'ROLE-ADMIN', name: 'System Administrator', category: 'board', permissions: ['READ_ALL_MODULES', 'WRITE_ALL_MODULES', 'MANAGE_USERS', 'REPORTS_ACCESS', 'POLICY_THRESHOLD_CONFIG', 'BOARD_ESCALATION_APPROVE', 'GOVERNANCE_OVERVIEW'] },
         { id: 'ROLE-BRANCH-MGR', name: 'Branch Manager / FOSA Supervisor', category: 'front-office', permissions: ['VAULT_RECONCILE', 'APPROVE_BRANCH_LOAN_TIER1', 'TELLER_LIMIT_OVERRIDE', 'AUDIT_TELLER_ACTIVITY', 'REPORTS_ACCESS'] },
         { id: 'ROLE-FRONT-OFFICE', name: 'FOSA Desk Officer', category: 'front-office', permissions: ['VIEW_MEMBER_BALANCE', 'AUDIT_TELLER_ACTIVITY', 'APPROVE_BRANCH_LOAN_TIER1', 'TELLER_LIMIT_OVERRIDE', 'REPORTS_ACCESS'] },
         { id: 'ROLE-TELLER', name: 'Teller Desk Officer', category: 'teller', permissions: ['POST_COUNTER_TX', 'VIEW_MEMBER_BALANCE', 'MANAGE_ASSIGNED_TILL'] },
@@ -1114,7 +1114,7 @@ class FinageStore {
 
   // --- Real-time Double-Entry Posting Action ---
   postTransaction({ type, memberId, loanId, amount, channel = 'Branch FOSA', glDebitCode, glCreditCode, description, legs, bankAccountId }) {
-    if (window.Platform?.context?.operationalStatus !== 'ready' ||
+    if (!window.Platform?.hasOperationalAccess() ||
         typeof window.Platform?.postFinancialTransaction !== 'function') {
       if (typeof App !== 'undefined' && App.showToast) {
         App.showToast('Financial posting is disabled: no authorized online atomic posting service is deployed.', 'danger');

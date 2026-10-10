@@ -8,6 +8,7 @@ const UserManagementView = {
 
   renderModal(container, state) {
     const currentUser = store.getCurrentUser();
+    const canManageUsers = window.Platform?.context?.writeCapabilities?.user_manage === true;
 
     container.innerHTML = `
       <div class="modal-backdrop" id="user-mgmt-modal">
@@ -35,9 +36,9 @@ const UserManagementView = {
             <button class="input-tab-btn ${this.activeTab === 'matrix' ? 'active' : ''}" data-tab="matrix">
               2. Permissions
             </button>
-            <button class="input-tab-btn ${this.activeTab === 'adduser' ? 'active' : ''}" data-tab="adduser">
+            ${canManageUsers ? `<button class="input-tab-btn ${this.activeTab === 'adduser' ? 'active' : ''}" data-tab="adduser">
               3. + Add User
-            </button>
+            </button>` : ''}
           </div>
 
           <!-- Tab Content Body -->
@@ -52,6 +53,12 @@ const UserManagementView = {
   },
 
   renderActiveTab(state) {
+    if (this.activeTab === 'adduser' && window.Platform?.context?.writeCapabilities?.user_manage !== true) {
+      this.activeTab = 'directory';
+    }
+    if (this.activeTab === 'edit' && window.Platform?.context?.writeCapabilities?.user_manage !== true) {
+      this.activeTab = 'directory';
+    }
     if (this.activeTab === 'users') return this.renderDirectoryTab(state);
     if (this.activeTab === 'matrix') return this.renderMatrixTab(state);
     if (this.activeTab === 'add') return this.renderAddUserTab(state);
@@ -101,6 +108,7 @@ const UserManagementView = {
 
   // --- TAB 1: User Directory ---
   renderDirectoryTab(state) {
+    const canManageUsers = window.Platform?.context?.writeCapabilities?.user_manage === true;
     return `
       <div style="display: flex; flex-direction: column; gap: 1rem;">
         <div style="display: flex; justify-content: space-between; align-items: center;">
@@ -153,7 +161,7 @@ const UserManagementView = {
                     ${u.id === state.currentUserId ? `
                       <span class="badge badge-aqua" style="font-weight: 700; margin-right: 4px;">Active Context</span>
                     ` : ''}
-                    <button class="btn btn-secondary btn-sm btn-edit-roles" data-id="${u.id}">Edit Roles</button>
+                    ${canManageUsers ? `<button class="btn btn-secondary btn-sm btn-edit-roles" data-id="${u.id}">Edit Roles</button>` : ''}
                   </td>
                 </tr>
               `).join('')}
@@ -245,7 +253,7 @@ const UserManagementView = {
           </div>
         </div>
 
-        <p style="margin:0;color:var(--text-dim);font-size:.78rem;">${window.supabase ? 'The new operator receives a one-time email code and must set a personal password before entering the organization.' : 'Offline user access is stored locally and cannot receive an email setup code.'}</p>
+        <p style="margin:0;color:var(--text-dim);font-size:.78rem;">The new operator receives a one-time email code and must set a personal password before entering the organization. User provisioning requires the connected Supabase service.</p>
 
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
           <div class="form-group" style="margin: 0;">
@@ -449,7 +457,7 @@ const UserManagementView = {
   },
 
   open() {
-    if (window.Platform?.context?.operationalStatus !== 'ready') {
+    if (!window.Platform?.hasOperationalAccess()) {
       App.showToast('Tenant user administration is unavailable until online domain write services are deployed.', 'danger');
       return;
     }

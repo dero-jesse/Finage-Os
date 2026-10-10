@@ -979,7 +979,7 @@ const InputModalView = {
   },
 
   open(tab = null) {
-    if (window.Platform?.context?.operationalStatus !== 'ready') {
+    if (!window.Platform?.hasOperationalAccess()) {
       App.showToast('Online operational write services are not enabled for this organization.', 'danger');
       return;
     }

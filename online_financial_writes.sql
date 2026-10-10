@@ -119,7 +119,7 @@ BEGIN
         RAISE EXCEPTION 'Loan facilities cannot be created through member onboarding.';
     END IF;
 
-    v_member_id := 'MEM-' || UPPER(SUBSTRING(REPLACE(uuid_generate_v4()::TEXT, '-', '') FROM 1 FOR 12));
+    v_member_id := 'MEM-' || UPPER(SUBSTRING(REPLACE(extensions.uuid_generate_v4()::TEXT, '-', '') FROM 1 FOR 12));
     EXECUTE format($sql$
         INSERT INTO %1$I.members AS inserted (
             id, name, "nationalId", phone, email, "joinDate", "branchId", "branchName",
@@ -139,7 +139,7 @@ BEGIN
     EXECUTE format($sql$
         INSERT INTO %1$I.audit_trail
             (id, timestamp, "userId", "userName", action, module, "entityId", description, "ipAddress", "glImpact")
-        SELECT 'AUD-' || uuid_generate_v4()::TEXT, NOW()::TEXT, operator.id, operator.name,
+        SELECT 'AUD-' || extensions.uuid_generate_v4()::TEXT, NOW()::TEXT, operator.id, operator.name,
             'MEMBER_ONBOARDED', 'Core Banking', $1,
             'Onboarded member ' || BTRIM($2->>'name'), NULL, 'None (Account Created)'
         FROM %1$I.users AS operator
@@ -416,7 +416,7 @@ BEGIN
         END IF;
     END IF;
 
-    v_tx_id := 'TX-' || COALESCE(v_dedupe_key, REPLACE(uuid_generate_v4()::TEXT, '-', ''));
+    v_tx_id := 'TX-' || COALESCE(v_dedupe_key, REPLACE(extensions.uuid_generate_v4()::TEXT, '-', ''));
     EXECUTE format($sql$
         INSERT INTO %1$I.transactions AS inserted (
             id, date, type, status, channel, "memberId", "memberName", amount, details,
@@ -460,7 +460,7 @@ BEGIN
         USING p_member_id, p_loan_id, p_amount, v_tx_id, COALESCE(p_channel, '');
     END IF;
 
-    v_audit_id := 'AUD-' || uuid_generate_v4()::TEXT;
+    v_audit_id := 'AUD-' || extensions.uuid_generate_v4()::TEXT;
     EXECUTE format($sql$
         INSERT INTO %1$I.audit_trail
             (id, timestamp, "userId", "userName", action, module, "entityId",

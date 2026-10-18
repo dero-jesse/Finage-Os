@@ -219,7 +219,7 @@ BEGIN
         v_permission_counter, v_permission_journal, v_permission_read_all;
     IF v_user_id IS NULL THEN RAISE EXCEPTION 'An active organization user is required.'; END IF;
 
-    IF p_amount IS NULL OR p_amount <= 0 OR p_amount > 999999999999
+    IF p_amount IS NULL OR p_amount <= 0
        OR p_legs IS NULL OR jsonb_typeof(p_legs) <> 'array'
        OR jsonb_array_length(p_legs) <> 2 THEN
         RAISE EXCEPTION 'A positive amount and exactly two posting legs are required.';
@@ -487,4 +487,165 @@ REVOKE ALL ON FUNCTION public.post_tenant_financial_transaction(TEXT, TEXT, TEXT
 GRANT EXECUTE ON FUNCTION public.online_write_capabilities(TEXT) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.create_tenant_member(TEXT, JSONB) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.post_tenant_financial_transaction(TEXT, TEXT, TEXT, TEXT, NUMERIC, TEXT, TEXT, JSONB, TEXT) TO authenticated;
+
+CREATE OR REPLACE FUNCTION public.update_tenant_manual_gl_journal(
+    p_org_id TEXT,
+    p_transaction_id TEXT,
+    p_debit_code TEXT,
+    p_credit_code TEXT,
+    p_amount NUMERIC,
+    p_description TEXT,
+    p_reason TEXT
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+    v_schema TEXT;
+    v_user_id TEXT;
+    v_user_name TEXT;
+    v_can_edit BOOLEAN;
+    v_tx JSONB;
+    v_updated_tx JSONB;
+    v_old_debit TEXT;
+    v_old_credit TEXT;
+    v_old_amount NUMERIC;
+    v_old_description TEXT;
+    v_description TEXT := NULLIF(BTRIM(p_description), '');
+    v_reason TEXT := NULLIF(BTRIM(p_reason), '');
+    v_codes TEXT[];
+    v_account_count INTEGER;
+    v_account RECORD;
+    v_delta NUMERIC;
+    v_audit_id TEXT;
+    v_old_impact TEXT;
+    v_new_impact TEXT;
+BEGIN
+    SELECT schema_name INTO v_schema
+    FROM public.organizations
+    WHERE id = p_org_id AND status = 'active'
+      AND schema_name ~ '^org_[a-z0-9_]+$'
+    FOR SHARE;
+    IF v_schema IS NULL THEN RAISE EXCEPTION 'Active organization not found.'; END IF;
+
+    EXECUTE format(
+        'SELECT id, name, %I.org_has_permission(''MODIFY_GL_JOURNAL'')
+         FROM %I.users WHERE auth_uid = auth.uid() AND status = ''Active''',
+        v_schema, v_schema
+    ) INTO v_user_id, v_user_name, v_can_edit;
+    IF v_user_id IS NULL THEN RAISE EXCEPTION 'An active organization user is required.'; END IF;
+    IF NOT COALESCE(v_can_edit, false) THEN
+        RAISE EXCEPTION 'Manual GL journal permission is required.';
+    END IF;
+    IF NULLIF(BTRIM(p_transaction_id), '') IS NULL
+       OR NULLIF(BTRIM(p_debit_code), '') IS NULL
+       OR NULLIF(BTRIM(p_credit_code), '') IS NULL
+       OR p_debit_code = p_credit_code THEN
+        RAISE EXCEPTION 'Choose a journal and two different GL accounts.';
+    END IF;
+    IF p_amount IS NULL OR p_amount <= 0 OR p_amount::TEXT IN ('NaN', 'Infinity', '-Infinity') THEN
+        RAISE EXCEPTION 'A positive finite journal amount is required.';
+    END IF;
+    IF v_description IS NULL OR LENGTH(v_description) > 180 THEN
+        RAISE EXCEPTION 'A journal description of 1 to 180 characters is required.';
+    END IF;
+    IF v_reason IS NULL OR LENGTH(v_reason) > 300 THEN
+        RAISE EXCEPTION 'A correction reason of 1 to 300 characters is required.';
+    END IF;
+
+    EXECUTE format(
+        'SELECT to_jsonb(tx) FROM %I.transactions AS tx WHERE tx.id = $1 FOR UPDATE',
+        v_schema
+    ) INTO v_tx USING p_transaction_id;
+    IF v_tx IS NULL THEN RAISE EXCEPTION 'Journal transaction not found.'; END IF;
+    IF v_tx->>'type' <> 'Manual GL Journal' OR v_tx->>'status' <> 'Completed' THEN
+        RAISE EXCEPTION 'Only completed manual GL journals can be corrected.';
+    END IF;
+
+    v_old_debit := v_tx->>'glDebit';
+    v_old_credit := v_tx->>'glCredit';
+    v_old_amount := (v_tx->>'amount')::NUMERIC;
+    v_old_description := COALESCE(v_tx->>'details', '');
+    IF NULLIF(v_old_debit, '') IS NULL OR NULLIF(v_old_credit, '') IS NULL
+       OR v_old_amount IS NULL OR v_old_amount <= 0 THEN
+        RAISE EXCEPTION 'The selected journal does not contain a valid original GL posting.';
+    END IF;
+
+    SELECT ARRAY_AGG(account_code ORDER BY account_code)
+    INTO v_codes
+    FROM (
+        SELECT DISTINCT account_code
+        FROM unnest(ARRAY[v_old_debit, v_old_credit, p_debit_code, p_credit_code]) AS codes(account_code)
+    ) AS account_codes;
+    EXECUTE format(
+        'SELECT COUNT(*) FROM %I.general_ledger WHERE code = ANY($1)',
+        v_schema
+    ) INTO v_account_count USING v_codes;
+    IF cardinality(v_codes) <> v_account_count THEN
+        RAISE EXCEPTION 'An original or corrected GL account does not exist.';
+    END IF;
+
+    FOR v_account IN EXECUTE format(
+        'SELECT code, normal FROM %I.general_ledger
+         WHERE code = ANY($1) ORDER BY code FOR UPDATE',
+        v_schema
+    ) USING v_codes
+    LOOP
+        IF v_account.normal NOT IN ('Debit', 'Credit') THEN
+            RAISE EXCEPTION 'GL account % has invalid normal balance.', v_account.code;
+        END IF;
+        v_delta := 0;
+        IF v_account.code = v_old_debit THEN
+            v_delta := v_delta - CASE WHEN v_account.normal = 'Debit' THEN v_old_amount ELSE -v_old_amount END;
+        END IF;
+        IF v_account.code = v_old_credit THEN
+            v_delta := v_delta - CASE WHEN v_account.normal = 'Credit' THEN v_old_amount ELSE -v_old_amount END;
+        END IF;
+        IF v_account.code = p_debit_code THEN
+            v_delta := v_delta + CASE WHEN v_account.normal = 'Debit' THEN p_amount ELSE -p_amount END;
+        END IF;
+        IF v_account.code = p_credit_code THEN
+            v_delta := v_delta + CASE WHEN v_account.normal = 'Credit' THEN p_amount ELSE -p_amount END;
+        END IF;
+        IF v_delta <> 0 THEN
+            EXECUTE format(
+                'UPDATE %I.general_ledger
+                 SET balance = COALESCE(balance, 0) + $1 WHERE code = $2',
+                v_schema
+            ) USING v_delta, v_account.code;
+        END IF;
+    END LOOP;
+
+    v_old_impact := format('Dr %s %s / Cr %s %s', v_old_debit, v_old_amount, v_old_credit, v_old_amount);
+    v_new_impact := format('Dr %s %s / Cr %s %s', p_debit_code, p_amount, p_credit_code, p_amount);
+    EXECUTE format(
+        'UPDATE %I.transactions AS tx
+         SET amount = $1, details = $2, "glDebit" = $3, "glCredit" = $4
+         WHERE tx.id = $5
+         RETURNING to_jsonb(tx)',
+        v_schema
+    ) INTO v_updated_tx
+    USING p_amount, v_description, p_debit_code, p_credit_code, p_transaction_id;
+
+    v_audit_id := 'AUD-' || extensions.uuid_generate_v4()::TEXT;
+    EXECUTE format(
+        'INSERT INTO %I.audit_trail
+            (id, timestamp, "userId", "userName", action, module, "entityId",
+             description, "ipAddress", "glImpact")
+         VALUES ($1, NOW()::TEXT, $2, $3, ''MANUAL_GL_JOURNAL_CORRECTED'',
+                 ''Online Core Banking'', $4, $5, NULL, $6)',
+        v_schema
+    ) USING v_audit_id, v_user_id, v_user_name, p_transaction_id,
+        format('Correction reason: %s. Previous description: %s. Corrected description: %s.',
+            v_reason, v_old_description, v_description),
+        format('Before: %s / After: %s / Reason: %s', v_old_impact, v_new_impact, v_reason);
+
+    RETURN v_updated_tx || jsonb_build_object('auditId', v_audit_id);
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.update_tenant_manual_gl_journal(TEXT, TEXT, TEXT, TEXT, NUMERIC, TEXT, TEXT) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.update_tenant_manual_gl_journal(TEXT, TEXT, TEXT, TEXT, NUMERIC, TEXT, TEXT) TO authenticated;
 NOTIFY pgrst, 'reload schema';

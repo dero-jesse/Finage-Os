@@ -225,7 +225,7 @@ const BranchView = {
               <div style="margin-top: 0.6rem; display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
                 <span style="font-size: 0.78rem;">Limit for <strong>${currentBranch.name}:</strong></span>
                 <span style="font-family: var(--font-mono); font-weight: 800; color: var(--accent-green-dark); font-size: 1rem;" id="teller-limit-display">${Formatter.money(tellerCashLimit)}</span>
-                <input type="number" id="inp-teller-limit" class="form-control" value="${tellerCashLimit}" min="1000" step="1000"
+                <input type="number" id="inp-teller-limit" class="form-control" value="${tellerCashLimit}" min="0" step="any"
                   style="width: 130px; padding: 0.3rem 0.5rem; font-size: 0.82rem; font-family: var(--font-mono); font-weight: 700;">
                 <button id="btn-set-teller-limit" class="btn btn-primary" style="padding: 0.35rem 0.9rem; font-size: 0.78rem; font-weight: 700;">
                   Set Limit
@@ -320,7 +320,7 @@ const BranchView = {
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
                   <div>
                     <label class="form-label">Requested Principal (${Formatter.currencySymbol})</label>
-                    <input type="number" id="new-loan-amount" class="form-control" value="5000" min="100">
+                    <input type="number" id="new-loan-amount" class="form-control" value="5000" min="0.01" step="any">
                   </div>
                   <div>
                     <label class="form-label">Credit Purpose</label>

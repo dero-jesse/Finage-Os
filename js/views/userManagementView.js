@@ -275,12 +275,12 @@ const UserManagementView = {
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
           <div class="form-group" style="margin: 0;">
             <label class="form-label">Single Transaction Approval Ceiling (${Formatter.currencySymbol})</label>
-            <input type="number" id="inp-u-limit" class="form-control" value="25000" min="0" step="5000">
+            <input type="number" id="inp-u-limit" class="form-control" value="25000" min="0" step="any">
           </div>
 
           <div class="form-group" style="margin: 0;">
             <label class="form-label">Daily Aggregate Approval Limit (${Formatter.currencySymbol})</label>
-            <input type="number" id="inp-u-daily" class="form-control" value="100000" min="0" step="10000">
+            <input type="number" id="inp-u-daily" class="form-control" value="100000" min="0" step="any">
           </div>
         </div>
 

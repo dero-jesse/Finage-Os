@@ -269,8 +269,8 @@ BEGIN
         v_schema
     ) INTO v_user_id, v_user_name, v_branch_id, v_can_credit, v_can_release, v_can_treasury, v_can_invest, v_can_journal;
     IF v_user_id IS NULL THEN RAISE EXCEPTION 'An active organization user is required.'; END IF;
-    IF p_amount IS NULL OR p_amount <= 0 OR p_amount > 999999999999 THEN
-        RAISE EXCEPTION 'A positive amount within the supported limit is required.';
+    IF p_amount IS NULL OR p_amount <= 0 THEN
+        RAISE EXCEPTION 'A positive amount is required.';
     END IF;
     IF v_key IS NULL OR v_key !~ '^[A-Za-z0-9:_-]{8,100}$' THEN
         RAISE EXCEPTION 'A valid idempotency key is required.';
@@ -573,7 +573,7 @@ BEGIN
             v_product_id := NULLIF(p_payload->>'productId','');
             v_amount := (p_payload->>'amount')::NUMERIC;
             v_m := (p_payload->>'termMonths')::INTEGER;
-            IF v_member_id IS NULL OR v_product_id IS NULL OR v_amount <= 0 OR v_amount > 999999999999
+            IF v_member_id IS NULL OR v_product_id IS NULL OR v_amount <= 0
                OR v_m < 1 OR v_m > 600 OR NULLIF(BTRIM(p_payload->>'purpose'),'') IS NULL THEN
                 RAISE EXCEPTION 'A member, product, purpose, positive amount, and valid term are required.';
             END IF;

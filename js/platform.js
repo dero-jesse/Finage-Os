@@ -473,6 +473,39 @@ const Platform = {
     return { transaction: data, refreshError };
   },
 
+  async updateManualGLJournal({ transactionId, debitCode, creditCode, amount, description, reason, notify = true }) {
+    if (this.context.writeCapabilities.manual_journal !== true) {
+      throw new Error('Manual journal corrections are not enabled for this user.');
+    }
+    const parsedAmount = Number(amount);
+    if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
+      throw new Error('Enter a positive journal amount.');
+    }
+    if (!transactionId || !debitCode || !creditCode || debitCode === creditCode) {
+      throw new Error('Choose a journal and two different GL accounts.');
+    }
+    if (!String(description || '').trim()) throw new Error('Enter a journal description.');
+    if (!String(reason || '').trim()) throw new Error('Enter a reason for correcting this journal.');
+    const { data, error } = await window.supabase.rpc('update_tenant_manual_gl_journal', {
+      p_org_id: this.context.currentOrgId,
+      p_transaction_id: transactionId,
+      p_debit_code: debitCode,
+      p_credit_code: creditCode,
+      p_amount: parsedAmount,
+      p_description: String(description).trim(),
+      p_reason: String(reason).trim()
+    });
+    if (error) throw new Error(`Journal correction was rejected: ${error.message}`);
+    if (!data?.id) throw new Error('Supabase did not confirm the journal correction.');
+    let refreshError = null;
+    try {
+      await this.loadOperationalData({ notify });
+    } catch (cause) {
+      refreshError = cause;
+    }
+    return { transaction: data, refreshError };
+  },
+
   getLegacyImportPayload() {
     if (!this.context.currentOrgId || !this.context.currentOrgSchema) {
       throw new Error('Select an organization before reviewing browser data.');

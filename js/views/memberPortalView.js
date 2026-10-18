@@ -350,9 +350,9 @@ const TellerDeskView = {
                   </div>
 
                   <div class="form-group" style="margin: 0;">
-                    <label class="form-label" for="teller-tx-amount">Target Amount (calculated from cash count)</label>
-                    <input type="number" id="teller-tx-amount" class="form-control" placeholder="0" value="0" min="0" step="1" readonly aria-describedby="teller-amount-help" style="font-size: 1.1rem; font-family: var(--font-mono); font-weight: 700;">
-                    <small id="teller-amount-help" style="color:var(--text-muted);">Enter the number of notes/coins below. The transaction amount updates automatically.</small>
+                    <label class="form-label" for="teller-tx-amount">Target Amount</label>
+                    <input type="number" id="teller-tx-amount" class="form-control" placeholder="0" value="0" min="0" step="1" aria-describedby="teller-amount-help" style="font-size: 1.1rem; font-family: var(--font-mono); font-weight: 700;">
+                    <small id="teller-amount-help" style="color:var(--text-muted);">Enter the target amount, then count notes/coins below. The physical total must match.</small>
                   </div>
                 </div>
 
@@ -415,7 +415,7 @@ const TellerDeskView = {
 
     this.bindGlobalEvents(container, state);
     if (profile) {
-      this.bindProfileEvents(container, state, profile);
+      this.bindProfileEvents(container, state, profile, { currentUser, assignedTill, canReadAll });
     }
   },
 
@@ -435,7 +435,7 @@ const TellerDeskView = {
     }
   },
 
-  bindProfileEvents(container, state, profile) {
+  bindProfileEvents(container, state, profile, { currentUser, assignedTill, canReadAll }) {
     // --- Masked data toggle ---
     container.querySelectorAll('.masked-data').forEach(el => {
       const original = el.innerText;
@@ -481,8 +481,8 @@ const TellerDeskView = {
           <input type="number" data-denom="${d}" class="form-control tx-denom" value="0" min="0" step="1" inputmode="numeric" aria-label="Count of ${currency.code || currencySelect.value} ${d} notes or coins">
         </div>
       `).join('');
-      container.querySelectorAll('.tx-denom').forEach(inp => inp.addEventListener('input', syncTargetAmountFromCashCount));
-      syncTargetAmountFromCashCount();
+      container.querySelectorAll('.tx-denom').forEach(inp => inp.addEventListener('input', validateCashCount));
+      validateCashCount();
     };
 
     const getCashCount = () => {
@@ -500,9 +500,7 @@ const TellerDeskView = {
       return { total, valid: valid && Number.isSafeInteger(total) };
     };
 
-    const syncTargetAmountFromCashCount = () => {
-      const cashCount = getCashCount();
-      txAmountInput.value = cashCount.valid ? String(cashCount.total) : '';
+    const validateCashCount = () => {
       validateTransaction();
     };
 
@@ -626,6 +624,9 @@ const TellerDeskView = {
 
     // --- Wire up currency change ---
     currencySelect.addEventListener('change', renderDenominations);
+
+    // --- Validate manual target amount changes ---
+    txAmountInput.addEventListener('input', validateTransaction);
 
     // --- Initial denomination render ---
     renderDenominations();

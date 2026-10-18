@@ -145,7 +145,7 @@ const InputModalView = {
             </div>
             <div class="form-group" style="margin: 0;">
               <label class="form-label">Initial Opening Deposit (${Formatter.currencySymbol})</label>
-              <input type="number" id="inp-member-deposit" class="form-control" value="5000" min="0" step="500">
+              <input type="number" id="inp-member-deposit" class="form-control" value="5000" min="0" step="any">
             </div>
             <div class="form-group" style="margin: 0;">
               <label class="form-label">Funding Channel</label>
@@ -198,7 +198,7 @@ const InputModalView = {
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
           <div class="form-group" style="margin: 0;">
             <label class="form-label">Transaction Amount (${Formatter.currencySymbol})</label>
-            <input type="number" id="inp-tx-amount" class="form-control" value="15000" min="1" step="100" required>
+            <input type="number" id="inp-tx-amount" class="form-control" value="15000" min="0.01" step="any" required>
           </div>
 
           <div class="form-group" style="margin: 0;">
@@ -279,7 +279,7 @@ const InputModalView = {
         <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem;">
           <div class="form-group" style="margin: 0;">
             <label class="form-label">Requested Principal (${Formatter.currencySymbol})</label>
-            <input type="number" id="inp-loan-amount" class="form-control" value="85000" min="1000" step="5000" required>
+            <input type="number" id="inp-loan-amount" class="form-control" value="85000" min="0.01" step="any" required>
           </div>
 
           <div class="form-group" style="margin: 0;">
@@ -363,7 +363,7 @@ const InputModalView = {
 
             <div class="form-group" style="margin: 0;">
               <label class="form-label">Drawdown Amount (${Formatter.currencySymbol})</label>
-              <input type="number" id="inp-drawdown-amount" class="form-control" value="500000" min="10000" step="50000" required>
+              <input type="number" id="inp-drawdown-amount" class="form-control" value="500000" min="0.01" step="any" required>
             </div>
 
             <div class="form-group" style="margin: 0;">
@@ -405,7 +405,7 @@ const InputModalView = {
           <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.75rem;">
             <div class="form-group" style="margin: 0;">
               <label class="form-label">Commitment (${Formatter.currencySymbol})</label>
-              <input type="number" id="inp-fac-commitment" class="form-control" value="2000000" min="10000" step="100000" required>
+              <input type="number" id="inp-fac-commitment" class="form-control" value="2000000" min="0.01" step="any" required>
             </div>
 
             <div class="form-group" style="margin: 0;">
@@ -441,7 +441,7 @@ const InputModalView = {
 
           <div class="form-group" style="margin: 0;">
             <label class="form-label">Monthly Outflow Amount (${Formatter.currencySymbol})</label>
-            <input type="number" id="inp-opex-amount" class="form-control" value="25000" min="100" step="500" required>
+            <input type="number" id="inp-opex-amount" class="form-control" value="25000" min="0.01" step="any" required>
           </div>
         </div>
 
@@ -488,16 +488,35 @@ const InputModalView = {
 
   renderJournalTab(state) {
     const accounts = (state.generalLedger || []).slice().sort((left, right) => String(left.code).localeCompare(String(right.code)));
-    const options = accounts.map(account =>
-      `<option value="${account.code}">${account.code} · ${account.name} (${account.category || account.type || 'Unclassified'})</option>`
+    const journals = (state.transactions || [])
+      .filter(transaction => transaction.type === 'Manual GL Journal' && transaction.status === 'Completed')
+      .slice()
+      .sort((left, right) => String(right.date || '').localeCompare(String(left.date || '')));
+    const selectedJournal = journals[0];
+    const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, char => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    })[char]);
+    const accountOptions = selectedCode => accounts.map(account =>
+      `<option value="${escapeHtml(account.code)}" ${account.code === selectedCode ? 'selected' : ''}>${escapeHtml(account.code)} · ${escapeHtml(account.name)} (${escapeHtml(account.category || account.type || 'Unclassified')})</option>`
     ).join('');
+    const options = accountOptions('');
+    const journalOptions = journals.map(journal => `
+      <option value="${escapeHtml(journal.id)}"
+        data-debit="${escapeHtml(journal.glDebit)}"
+        data-credit="${escapeHtml(journal.glCredit)}"
+        data-amount="${escapeHtml(journal.amount)}"
+        data-description="${escapeHtml(journal.details || '')}"
+        ${journal.id === selectedJournal?.id ? 'selected' : ''}>
+        ${escapeHtml(journal.id)} · ${escapeHtml(journal.date || '')} · ${Formatter.money(journal.amount)}
+      </option>
+    `).join('');
     return `
       <form id="form-gl-journal" style="display:flex;flex-direction:column;gap:1rem;">
         <p style="margin:0;color:var(--text-dim);font-size:.78rem;">Post a balanced debit and credit between any two accounts in this organization’s chart.</p>
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:.85rem;">
           <label class="form-label">Debit account<select name="debitCode" class="form-control" required>${options}</select></label>
           <label class="form-label">Credit account<select name="creditCode" class="form-control" required>${options}</select></label>
-          <label class="form-label">Amount<input name="amount" type="number" min="0.01" step="0.01" class="form-control" required></label>
+          <label class="form-label">Amount<input name="amount" type="number" min="0.01" step="any" class="form-control" required></label>
           <label class="form-label">Journal description<input name="description" class="form-control" maxlength="180" required></label>
         </div>
         <div id="gl-journal-error" role="alert" style="display:none;color:var(--accent-rose);font-size:.78rem;font-weight:700;"></div>
@@ -505,6 +524,28 @@ const InputModalView = {
           <button type="submit" class="btn btn-primary" ${accounts.length < 2 ? 'disabled' : ''}>Post Balanced Journal</button>
         </div>
       </form>
+      <section style="display:flex;flex-direction:column;gap:1rem;margin-top:1.5rem;padding-top:1.25rem;border-top:1px solid var(--border-subtle);">
+        <div>
+          <h3 style="margin:0 0 .35rem;font-size:.95rem;">Correct a posted manual journal</h3>
+          <p style="margin:0;color:var(--text-dim);font-size:.78rem;">This updates the selected manual journal and its GL balances. The original values are recorded in the audit trail.</p>
+        </div>
+        ${journals.length ? `
+          <form id="form-correct-gl-journal" style="display:flex;flex-direction:column;gap:1rem;">
+            <label class="form-label">Posted journal<select name="transactionId" class="form-control" required>${journalOptions}</select></label>
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:.85rem;">
+              <label class="form-label">Debit account<select name="debitCode" class="form-control" required>${accountOptions(selectedJournal.glDebit)}</select></label>
+              <label class="form-label">Credit account<select name="creditCode" class="form-control" required>${accountOptions(selectedJournal.glCredit)}</select></label>
+              <label class="form-label">Amount<input name="amount" type="number" min="0.01" step="any" class="form-control" value="${escapeHtml(selectedJournal.amount)}" required></label>
+              <label class="form-label">Journal description<input name="description" class="form-control" maxlength="180" value="${escapeHtml(selectedJournal.details || '')}" required></label>
+              <label class="form-label">Correction reason<input name="reason" class="form-control" maxlength="300" placeholder="Explain what was wrong" required></label>
+            </div>
+            <div id="gl-journal-correction-error" role="alert" style="display:none;color:var(--accent-rose);font-size:.78rem;font-weight:700;"></div>
+            <div style="display:flex;justify-content:flex-end;">
+              <button type="submit" class="btn btn-secondary" ${accounts.length < 2 ? 'disabled' : ''}>Save Journal Correction</button>
+            </div>
+          </form>
+        ` : '<p style="margin:0;color:var(--text-dim);font-size:.8rem;">No completed manual GL journals are available to correct.</p>'}
+      </section>
     `;
   },
 
@@ -614,6 +655,54 @@ const InputModalView = {
         } catch (error) {
           errorEl.textContent = error.message || 'Journal was not accepted by Supabase.';
           errorEl.style.display = 'block';
+        } finally {
+          submitButton.disabled = false;
+        }
+      });
+    }
+
+    const correctionForm = container.querySelector('#form-correct-gl-journal');
+    if (correctionForm) {
+      const correctionError = container.querySelector('#gl-journal-correction-error');
+      const journalSelect = correctionForm.elements.transactionId;
+      const updateCorrectionFields = () => {
+        const option = journalSelect.selectedOptions[0];
+        correctionForm.elements.debitCode.value = option?.dataset.debit || '';
+        correctionForm.elements.creditCode.value = option?.dataset.credit || '';
+        correctionForm.elements.amount.value = option?.dataset.amount || '';
+        correctionForm.elements.description.value = option?.dataset.description || '';
+      };
+      journalSelect.addEventListener('change', updateCorrectionFields);
+      correctionForm.addEventListener('submit', async event => {
+        event.preventDefault();
+        correctionError.style.display = 'none';
+        const formData = new FormData(correctionForm);
+        const debitCode = String(formData.get('debitCode') || '');
+        const creditCode = String(formData.get('creditCode') || '');
+        if (debitCode === creditCode) {
+          correctionError.textContent = 'Choose two different GL accounts for the debit and credit.';
+          correctionError.style.display = 'block';
+          return;
+        }
+        const submitButton = correctionForm.querySelector('[type="submit"]');
+        submitButton.disabled = true;
+        try {
+          const result = await Platform.updateManualGLJournal({
+            transactionId: String(formData.get('transactionId') || ''),
+            debitCode,
+            creditCode,
+            amount: Number(formData.get('amount')),
+            description: String(formData.get('description') || '').trim(),
+            reason: String(formData.get('reason') || '').trim()
+          });
+          App.showToast(result.refreshError
+            ? `Journal ${result.transaction.id} was corrected, but refreshed balances could not be loaded: ${result.refreshError.message}`
+            : `Journal ${result.transaction.id} corrected. The previous values were recorded in the audit trail.`,
+          result.refreshError ? 'warning' : 'success');
+          modal.classList.remove('active');
+        } catch (error) {
+          correctionError.textContent = error.message || 'Journal correction was rejected.';
+          correctionError.style.display = 'block';
         } finally {
           submitButton.disabled = false;
         }

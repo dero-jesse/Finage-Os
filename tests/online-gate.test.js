@@ -54,6 +54,21 @@ function loadPlatform(remoteRows, {
         remoteRows.transactions.push({ ...writeResponse, postedBy: 'USR-test' });
         return { data: writeResponse, error: null };
       }
+      if (name === 'update_tenant_manual_gl_journal') {
+        const corrected = {
+          id: args.p_transaction_id,
+          type: 'Manual GL Journal',
+          amount: args.p_amount,
+          glDebit: args.p_debit_code,
+          glCredit: args.p_credit_code,
+          details: args.p_description,
+          correctionReason: args.p_reason
+        };
+        remoteRows.transactions = (remoteRows.transactions || []).map(transaction =>
+          transaction.id === corrected.id ? corrected : transaction
+        );
+        return { data: corrected, error: null };
+      }
       if (name === 'execute_tenant_domain_action') return { data: domainResponse, error: null };
       if (name === 'execute_tenant_financial_action') return { data: writeResponse, error: null };
       if (name === 'import_legacy_tenant_state' && importResponse.success) {
@@ -129,6 +144,76 @@ test('tenant reads are loaded from Supabase and operational data stays read-only
   assert.deepEqual(Array.from(state.members, member => member.id), ['mem-1']);
   assert.equal(state.generalLedger[0].balance, 200);
   assert.equal(state.transactions[0].id, 'tx-1');
+});
+
+test('manual GL journal corrections require permission and use the atomic server RPC', async () => {
+  const remoteRows = {
+    roles: [], users: [], branches: [], members: [],
+    general_ledger: [{ code: '1010', balance: 10 }, { code: '2010', balance: 10 }],
+    transactions: [{ id: 'TX-journal-1', type: 'Manual GL Journal', amount: 10 }],
+    audit_trail: []
+  };
+  const { platform, calls, state } = loadPlatform(remoteRows, {
+    capabilities: { manual_journal: true }
+  });
+  await platform.loadOperationalData();
+  const result = await platform.updateManualGLJournal({
+    transactionId: 'TX-journal-1',
+    debitCode: '2010',
+    creditCode: '1010',
+    amount: 2000,
+    description: 'Corrected posting',
+    reason: 'Original account coding was incorrect'
+  });
+
+  assert.equal(result.transaction.id, 'TX-journal-1');
+  assert.equal(state.transactions[0].amount, 2000);
+  const call = calls.find(item => item.name === 'update_tenant_manual_gl_journal');
+  assert.equal(call.args.p_org_id, 'org-1');
+  assert.equal(call.args.p_transaction_id, 'TX-journal-1');
+  assert.equal(call.args.p_amount, 2000);
+  assert.equal(call.args.p_debit_code, '2010');
+  assert.equal(call.args.p_credit_code, '1010');
+  assert.equal(call.args.p_reason, 'Original account coding was incorrect');
+
+  const disabled = loadPlatform(remoteRows);
+  await assert.rejects(disabled.platform.updateManualGLJournal({
+    transactionId: 'TX-journal-1',
+    debitCode: '1010',
+    creditCode: '2010',
+    amount: 10,
+    description: 'No permission',
+    reason: 'Unauthorized test'
+  }), /not enabled/i);
+});
+
+test('GL journal tab offers only completed manual journals for correction', () => {
+  const window = {};
+  vm.runInNewContext(read('js/views/inputModalView.js'), {
+    window,
+    Formatter: { money: value => String(value) }
+  }, { filename: 'js/views/inputModalView.js' });
+
+  const html = window.InputModalView.renderJournalTab({
+    generalLedger: [
+      { code: '1010', name: 'Cash', normal: 'Debit' },
+      { code: '2010', name: 'Deposits', normal: 'Credit' }
+    ],
+    transactions: [
+      {
+        id: 'TX-journal-1', type: 'Manual GL Journal', status: 'Completed',
+        amount: 2000, glDebit: '1010', glCredit: '2010', details: 'Opening balance'
+      },
+      { id: 'TX-teller-1', type: 'Teller Deposit', status: 'Completed', amount: 20 },
+      { id: 'TX-journal-pending', type: 'Manual GL Journal', status: 'Pending', amount: 30 }
+    ]
+  });
+
+  assert.match(html, /Correct a posted manual journal/);
+  assert.match(html, /value="TX-journal-1"[\s\S]*selected/);
+  assert.match(html, /data-debit="1010"/);
+  assert.match(html, /data-credit="2010"/);
+  assert.doesNotMatch(html, /TX-teller-1|TX-journal-pending/);
 });
 
 test('connected tenant statuses allow workspace access without treating failed loads as online', () => {
@@ -358,6 +443,10 @@ test('SQL migrations expose only authenticated, authorized atomic writes', () =>
   assert.match(writes, /v_gl_code = '1010' AND p_type <> 'Manual GL Journal'/);
   assert.match(writes, /audit_trail/);
   assert.match(writes, /GRANT EXECUTE ON FUNCTION public\.post_tenant_financial_transaction/);
+  assert.match(writes, /CREATE OR REPLACE FUNCTION public\.update_tenant_manual_gl_journal/);
+  assert.match(writes, /Only completed manual GL journals can be corrected/);
+  assert.match(writes, /MANUAL_GL_JOURNAL_CORRECTED/);
+  assert.match(writes, /GRANT EXECUTE ON FUNCTION public\.update_tenant_manual_gl_journal\(TEXT, TEXT, TEXT, TEXT, NUMERIC, TEXT, TEXT\)/);
   assert.match(writes, /REVOKE ALL ON FUNCTION public\.create_tenant_member/);
 
   const extended = read('online_extended_writes.sql');

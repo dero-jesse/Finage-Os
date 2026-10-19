@@ -958,12 +958,12 @@ BEGIN
             v_id := 'XFER-' || v_key;
             v_amount := (p_payload->>'amount')::NUMERIC;
             IF v_amount <= 0 THEN RAISE EXCEPTION 'Transfer amount must be positive.'; END IF;
-            EXECUTE format($
-                INSERT INTO %1.branch_cash_transfers
+            EXECUTE format($sql$
+                INSERT INTO %1$I.branch_cash_transfers
                     (id, branch_id, transfer_type, from_user_id, to_user_id, amount, status, notes, created_by)
-                VALUES (, , , , , , 'pending', , )
+                VALUES ($1, $2, $3, $4, $5, $6, 'pending', $7, $8)
                 RETURNING to_jsonb(branch_cash_transfers)
-            $, v_schema)
+            $sql$, v_schema)
             INTO v_result USING v_id, COALESCE(p_payload->>'branchId', v_user_branch),
                 p_payload->>'transferType', p_payload->>'fromUserId', p_payload->>'toUserId',
                 v_amount, COALESCE(p_payload->>'notes',''), v_user_id;
@@ -973,18 +973,18 @@ BEGIN
                 RAISE EXCEPTION 'Cash transfer acceptance permission is required.';
             END IF;
             v_id := p_payload->>'transferId';
-            EXECUTE format($
-                SELECT to_jsonb(t) FROM %1.branch_cash_transfers t WHERE id= FOR UPDATE
-            $, v_schema) INTO v_task USING v_id;
+            EXECUTE format($sql$
+                SELECT to_jsonb(t) FROM %1$I.branch_cash_transfers t WHERE id=$1 FOR UPDATE
+            $sql$, v_schema) INTO v_task USING v_id;
             IF v_task IS NULL THEN RAISE EXCEPTION 'Cash transfer not found.'; END IF;
             IF v_task->>'status' <> 'pending' THEN RAISE EXCEPTION 'Transfer is not in pending status.'; END IF;
             v_amount := (v_task->>'amount')::NUMERIC;
-            EXECUTE format($
-                UPDATE %1.branch_cash_transfers
-                SET status = 'accepted', accepted_at = NOW(), accepted_by = 
-                WHERE id = 
+            EXECUTE format($sql$
+                UPDATE %1$I.branch_cash_transfers
+                SET status = 'accepted', accepted_at = NOW(), accepted_by = $2
+                WHERE id = $1
                 RETURNING to_jsonb(branch_cash_transfers)
-            $, v_schema) INTO v_result USING v_id, v_user_id;
+            $sql$, v_schema) INTO v_result USING v_id, v_user_id;
             v_status := 'CASH_TRANSFER_ACCEPTED';
         WHEN 'settle_expense' THEN
             IF NOT (COALESCE(v_can_opex,false) OR COALESCE(v_can_treasury,false)) THEN
@@ -1004,12 +1004,12 @@ BEGIN
                 v_key,
                 NULL, NULL, v_id
             );
-            EXECUTE format($
-                INSERT INTO %1.expense_settlements
+            EXECUTE format($sql$
+                INSERT INTO %1$I.expense_settlements
                     (id, opex_id, payee_name, invoice_ref, expense_gl, funding_gl, amount, payment_method, voucher_number, description, transaction_id, created_by)
-                VALUES (, , , , , , , , , 0, 1, 2)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
                 RETURNING to_jsonb(expense_settlements)
-            $, v_schema) INTO v_task USING v_id, p_payload->>'opexId', p_payload->>'payeeName',
+            $sql$, v_schema) INTO v_task USING v_id, p_payload->>'opexId', p_payload->>'payeeName',
                 p_payload->>'invoiceRef', p_payload->>'expenseGL', p_payload->>'fundingGL',
                 v_amount, COALESCE(p_payload->>'paymentMethod', 'Bank Transfer'),
                 'VOUCH-' || SUBSTRING(v_key FROM 1 FOR 8),
@@ -1021,10 +1021,10 @@ BEGIN
                 RAISE EXCEPTION 'Bank account administration permission is required.';
             END IF;
             v_id := COALESCE(NULLIF(p_payload->>'id',''), 'BANK-' || v_key);
-            EXECUTE format($
-                INSERT INTO %1.bank_accounts
+            EXECUTE format($sql$
+                INSERT INTO %1$I.bank_accounts
                     (id, bank_name, account_number, account_title, gl_code, currency, current_balance, is_active, updated_at)
-                VALUES (, , , , COALESCE(, '1020'), COALESCE(, 'UGX'), COALESCE(()::NUMERIC, 0), COALESCE(()::BOOLEAN, true), NOW())
+                VALUES ($1, $2, $3, $4, COALESCE($5, '1020'), COALESCE($6, 'UGX'), COALESCE(($7)::NUMERIC, 0), COALESCE(($8)::BOOLEAN, true), NOW())
                 ON CONFLICT (id) DO UPDATE SET
                     bank_name = EXCLUDED.bank_name,
                     account_number = EXCLUDED.account_number,
@@ -1032,7 +1032,7 @@ BEGIN
                     is_active = EXCLUDED.is_active,
                     updated_at = NOW()
                 RETURNING to_jsonb(bank_accounts)
-            $, v_schema) INTO v_result USING v_id, p_payload->>'bankName', p_payload->>'accountNumber',
+            $sql$, v_schema) INTO v_result USING v_id, p_payload->>'bankName', p_payload->>'accountNumber',
                 p_payload->>'accountTitle', p_payload->>'glCode', p_payload->>'currency',
                 p_payload->>'balance', p_payload->>'isActive';
             v_status := 'BANK_ACCOUNT_MANAGED';
@@ -1050,12 +1050,12 @@ BEGIN
                 v_key,
                 NULL, NULL, v_id
             );
-            EXECUTE format($
-                INSERT INTO %1.investment_accruals
+            EXECUTE format($sql$
+                INSERT INTO %1$I.investment_accruals
                     (id, position_id, accrual_date, accrued_amount, gl_debit, gl_credit, transaction_id, created_by)
-                VALUES (, , CURRENT_DATE, , '1310', '4020', , )
+                VALUES ($1, $2, CURRENT_DATE, $3, '1310', '4020', $4, $5)
                 RETURNING to_jsonb(investment_accruals)
-            $, v_schema) INTO v_task USING v_id, v_target_id, v_amount, v_result->>'id', v_user_id;
+            $sql$, v_schema) INTO v_task USING v_id, v_target_id, v_amount, v_result->>'id', v_user_id;
             v_result := v_result || jsonb_build_object('accrual', v_task);
             v_status := 'INVESTMENT_YIELD_ACCRUED';
         WHEN 'batch_post_transactions' THEN
@@ -1073,11 +1073,11 @@ BEGIN
                 'status', 'completed',
                 'postedAt', v_now
             );
-            EXECUTE format($
-                INSERT INTO %1.batch_import_jobs
+            EXECUTE format($sql$
+                INSERT INTO %1$I.batch_import_jobs
                     (id, batch_type, total_rows, successful_rows, failed_rows, status, summary, created_by)
-                VALUES (, COALESCE(, 'transactions'), , , 0, 'completed', , )
-            $, v_schema) USING v_id, p_payload->>'batchType',
+                VALUES ($1, COALESCE($2, 'transactions'), $3, $3, 0, 'completed', $4, $5)
+            $sql$, v_schema) USING v_id, p_payload->>'batchType',
                 jsonb_array_length(p_payload->'transactions'), v_result, v_user_id;
             v_status := 'BATCH_TRANSACTIONS_POSTED';
         WHEN 'committee_review_decision' THEN
@@ -1085,17 +1085,17 @@ BEGIN
             v_target_id := p_payload->>'applicationId';
             v_id := 'COMM-' || v_target_id;
             v_status := p_payload->>'decision';
-            EXECUTE format($
-                INSERT INTO %1.committee_reviews
+            EXECUTE format($sql$
+                INSERT INTO %1$I.committee_reviews
                     (id, application_id, required_signatures, current_signatures, signers, status, comments, updated_at)
-                VALUES (, , 2, 1, jsonb_build_array(jsonb_build_object('userId', , 'userName', , 'decision', , 'signedAt', NOW())), , COALESCE(,''), NOW())
+                VALUES ($1, $2, 2, 1, jsonb_build_array(jsonb_build_object('userId', $3, 'userName', $4, 'decision', $5, 'signedAt', NOW())), $5, COALESCE($6,''), NOW())
                 ON CONFLICT (id) DO UPDATE SET
-                    current_signatures = %1.committee_reviews.current_signatures + 1,
-                    signers = %1.committee_reviews.signers || jsonb_build_array(jsonb_build_object('userId', , 'userName', , 'decision', , 'signedAt', NOW())),
-                    status = CASE WHEN  = 'rejected' THEN 'rejected' ELSE %1.committee_reviews.status END,
+                    current_signatures = %1$I.committee_reviews.current_signatures + 1,
+                    signers = %1$I.committee_reviews.signers || jsonb_build_array(jsonb_build_object('userId', $3, 'userName', $4, 'decision', $5, 'signedAt', NOW())),
+                    status = CASE WHEN $5 = 'rejected' THEN 'rejected' ELSE %1$I.committee_reviews.status END,
                     updated_at = NOW()
                 RETURNING to_jsonb(committee_reviews)
-            $, v_schema) INTO v_result USING v_id, v_target_id, v_user_id, v_user_name, v_status, p_payload->>'comments';
+            $sql$, v_schema) INTO v_result USING v_id, v_target_id, v_user_id, v_user_name, v_status, p_payload->>'comments';
             v_status := 'COMMITTEE_REVIEW_RECORDED';
         ELSE
             RAISE EXCEPTION 'This tenant operation is not enabled.';

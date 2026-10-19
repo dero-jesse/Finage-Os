@@ -134,7 +134,7 @@ const InputModalView = {
           <span style="font-size: 0.85rem; font-weight: 700; color: #fff; margin-bottom: 0.5rem; display: block;">
             Opening Setup
           </span>
-          <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem; align-items: end;">
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; align-items: end;">
             <div class="form-group" style="margin: 0;">
               <label class="form-label">Primary Account Type</label>
               <select id="inp-member-acc-type" class="form-control">
@@ -143,22 +143,15 @@ const InputModalView = {
                 <option value="shares">Member Share Capital Equity (GL 3010)</option>
               </select>
             </div>
-            <div class="form-group" style="margin: 0;">
-              <label class="form-label">Opening Deposit Amount (${Formatter.currencySymbol})</label>
-              <input type="number" id="inp-member-deposit" class="form-control" value="0" min="0" step="any">
+            <div style="display: flex; align-items: flex-start; gap: 0.6rem; padding: 0.65rem 0.85rem; background: rgba(6,182,212,0.07); border: 1px solid rgba(6,182,212,0.25); border-radius: var(--radius-sm);">
+              <span style="font-size: 1.1rem; line-height: 1; flex-shrink: 0;">🏧</span>
+              <div style="font-size: 0.75rem; color: var(--text-dim); line-height: 1.45;">
+                <strong style="color: var(--accent-cyan); display: block; margin-bottom: 0.15rem;">Opening Deposit — Teller Desk</strong>
+                After registration, direct the member to the <strong>Teller Desk</strong>.
+                The teller counts physical bills on the denomination board and posts the Member Deposit
+                (Dr 1010 Till / Cr 2010 Savings). FOSA does not enter cash amounts.
+              </div>
             </div>
-            <div class="form-group" style="margin: 0;">
-              <label class="form-label">Assign to Teller Till</label>
-              <select id="inp-member-teller-till" class="form-control">
-                <option value="">— No deposit —</option>
-                ${(state.branches || []).flatMap(b => (b.tillBalances || []).map(t =>
-                  `<option value="${t.id || t.tellerId}">${t.tellerName || t.tellerId} (${b.name}) · ${Formatter.money(t.balance || 0)}</option>`
-                )).join('')}
-              </select>
-            </div>
-          </div>
-          <div style="font-size: 0.725rem; color: var(--accent-amber); margin-top: 0.5rem;">
-            ⚠ FOSA cannot post cash directly. Opening deposit creates a pending transfer — assigned teller must physically receive and confirm the cash.
           </div>
         </div>
 
@@ -788,18 +781,12 @@ const InputModalView = {
         const occ = container.querySelector('#inp-member-occ')?.value;
         const emp = container.querySelector('#inp-member-emp')?.value;
         const accType = container.querySelector('#inp-member-acc-type')?.value || 'savings';
-        const deposit = Number(container.querySelector('#inp-member-deposit')?.value) || 0;
-        const assignedTillId = container.querySelector('#inp-member-teller-till')?.value || '';
 
         const branchObj = state.branches.find(b => b.id === branchId) || state.branches[0];
         const submitButton = memberForm.querySelector('[type="submit"]');
 
-        if (deposit > 0 && !assignedTillId) {
-          App.showToast('Select a teller till to receive the opening deposit. FOSA cannot post cash directly.', 'danger');
-          return;
-        }
-        if (deposit > 0 && accType !== 'savings') {
-          App.showToast('Opening deposits support savings accounts only. Clear the deposit amount or switch to a savings account.', 'danger');
+        if (accType === 'loan') {
+          App.showToast('A loan account cannot be opened during member registration. Submit an application through the Credit workflow.', 'danger');
           return;
         }
 
@@ -807,7 +794,7 @@ const InputModalView = {
         const originalLabel = submitButton.textContent;
         submitButton.textContent = 'Registering member…';
         try {
-          const newMember = store.addMember({
+          const member = await store.addMember({
             name,
             nationalId: idNumber,
             phone,
@@ -818,37 +805,12 @@ const InputModalView = {
             occupation: occ,
             employer: emp
           });
-          const member = await newMember;
-
-          // Opening deposit: route through teller cash transfer — FOSA must NOT post cash directly.
-          if (deposit > 0 && accType === 'savings' && assignedTillId) {
-            submitButton.textContent = 'Creating teller transfer…';
-            try {
-              memberForm.dataset.idempotencyKey ||= crypto.randomUUID();
-              await Platform.initiateCashTransfer({
-                branchId: branchId || branchObj?.id,
-                transferType: 'vault_to_teller',
-                fromUserId: 'VAULT',
-                toUserId: assignedTillId,
-                amount: deposit,
-                notes: `Opening deposit for new member ${name} (${member.id}) — teller to post Member Deposit after physical cash count`
-              });
-              delete memberForm.dataset.idempotencyKey;
-              App.showToast(
-                `Member ${name} (${member.id}) registered. Opening deposit of ${Formatter.money(deposit)} queued as a pending transfer to till ${assignedTillId}. Teller must confirm cash receipt and post the GL entry.`,
-                'success'
-              );
-              modal.classList.remove('active');
-            } catch (xferError) {
-              App.showToast(
-                `Member ${name} (${member.id}) was created, but the deposit transfer was rejected: ${xferError.message}. Ask the teller to post the opening deposit manually.`,
-                'warning'
-              );
-            }
-            return;
-          }
-
-          App.showToast(`Member ${name} (${member.id}) was accepted by Supabase.${member.refreshError ? ` Remote balances need refresh: ${member.refreshError.message}` : ''}`, member.refreshError ? 'warning' : 'success');
+          App.showToast(
+            member.refreshError
+              ? `Member ${name} (${member.id}) registered. Remote balances need refresh: ${member.refreshError.message}. Direct the member to the Teller Desk for the opening deposit.`
+              : `Member ${name} (${member.id}) registered. Direct them to the Teller Desk — teller will count bills and post the opening deposit.`,
+            member.refreshError ? 'warning' : 'success'
+          );
           modal.classList.remove('active');
         } catch (error) {
           App.showToast(`Member registration failed: ${error.message || 'Unknown error.'}`, 'danger');

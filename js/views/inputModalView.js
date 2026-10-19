@@ -144,18 +144,21 @@ const InputModalView = {
               </select>
             </div>
             <div class="form-group" style="margin: 0;">
-              <label class="form-label">Initial Opening Deposit (${Formatter.currencySymbol})</label>
-              <input type="number" id="inp-member-deposit" class="form-control" value="5000" min="0" step="any">
+              <label class="form-label">Opening Deposit Amount (${Formatter.currencySymbol})</label>
+              <input type="number" id="inp-member-deposit" class="form-control" value="0" min="0" step="any">
             </div>
             <div class="form-group" style="margin: 0;">
-              <label class="form-label">Funding Channel</label>
-              <select id="inp-member-channel" class="form-control">
-                <option value="Branch FOSA Counter">Branch FOSA Counter</option>
+              <label class="form-label">Assign to Teller Till</label>
+              <select id="inp-member-teller-till" class="form-control">
+                <option value="">— No deposit —</option>
+                ${(state.branches || []).flatMap(b => (b.tillBalances || []).map(t =>
+                  `<option value="${t.id || t.tellerId}">${t.tellerName || t.tellerId} (${b.name}) · ${Formatter.money(t.balance || 0)}</option>`
+                )).join('')}
               </select>
             </div>
           </div>
-          <div style="font-size: 0.725rem; color: var(--text-dim); margin-top: 0.5rem;">
-            Opening deposits post immediately to the selected account.
+          <div style="font-size: 0.725rem; color: var(--accent-amber); margin-top: 0.5rem;">
+            ⚠ FOSA cannot post cash directly. Opening deposit creates a pending transfer — assigned teller must physically receive and confirm the cash.
           </div>
         </div>
 
@@ -786,17 +789,23 @@ const InputModalView = {
         const emp = container.querySelector('#inp-member-emp')?.value;
         const accType = container.querySelector('#inp-member-acc-type')?.value || 'savings';
         const deposit = Number(container.querySelector('#inp-member-deposit')?.value) || 0;
-        const channel = container.querySelector('#inp-member-channel')?.value || 'Branch FOSA Counter';
+        const assignedTillId = container.querySelector('#inp-member-teller-till')?.value || '';
 
         const branchObj = state.branches.find(b => b.id === branchId) || state.branches[0];
         const submitButton = memberForm.querySelector('[type="submit"]');
-        if (deposit > 0 && accType !== 'savings') {
-          App.showToast('Online opening deposits currently support savings accounts only. Create the member without a deposit or post the unsupported account type after its online service is deployed.', 'danger');
+
+        if (deposit > 0 && !assignedTillId) {
+          App.showToast('Select a teller till to receive the opening deposit. FOSA cannot post cash directly.', 'danger');
           return;
         }
+        if (deposit > 0 && accType !== 'savings') {
+          App.showToast('Opening deposits support savings accounts only. Clear the deposit amount or switch to a savings account.', 'danger');
+          return;
+        }
+
         submitButton.disabled = true;
         const originalLabel = submitButton.textContent;
-        submitButton.textContent = 'Posting transaction…';
+        submitButton.textContent = 'Registering member…';
         try {
           const newMember = store.addMember({
             name,
@@ -811,30 +820,30 @@ const InputModalView = {
           });
           const member = await newMember;
 
-          if (deposit > 0) {
-            const cashCode = '1010';
+          // Opening deposit: route through teller cash transfer — FOSA must NOT post cash directly.
+          if (deposit > 0 && accType === 'savings' && assignedTillId) {
+            submitButton.textContent = 'Creating teller transfer…';
             try {
               memberForm.dataset.idempotencyKey ||= crypto.randomUUID();
-              const posting = await Platform.postFinancialTransaction({
-                type: 'Member Deposit',
-                memberId: member.id,
+              await Platform.initiateCashTransfer({
+                branchId: branchId || branchObj?.id,
+                transferType: 'vault_to_teller',
+                fromUserId: 'VAULT',
+                toUserId: assignedTillId,
                 amount: deposit,
-                channel,
-                description: `Opening savings deposit for new member ${name}`,
-                legs: [
-                  { glCode: cashCode, type: 'Debit', amount: deposit },
-                  { glCode: '2010', type: 'Credit', amount: deposit }
-                ],
-                idempotencyKey: memberForm.dataset.idempotencyKey
+                notes: `Opening deposit for new member ${name} (${member.id}) — teller to post Member Deposit after physical cash count`
               });
               delete memberForm.dataset.idempotencyKey;
-              App.showToast(posting.refreshError
-                ? `Member ${name} and deposit ${posting.transaction.id} were accepted; refreshed balances could not be loaded: ${posting.refreshError.message}`
-                : `Member ${name} and opening deposit ${posting.transaction.id} were accepted by Supabase.`,
-              posting.refreshError ? 'warning' : 'success');
+              App.showToast(
+                `Member ${name} (${member.id}) registered. Opening deposit of ${Formatter.money(deposit)} queued as a pending transfer to till ${assignedTillId}. Teller must confirm cash receipt and post the GL entry.`,
+                'success'
+              );
               modal.classList.remove('active');
-            } catch (postingError) {
-              App.showToast(`Member ${name} (${member.id}) was created by Supabase, but the opening deposit was rejected: ${postingError.message}. The member remains at zero savings; retry the deposit separately.`, 'danger');
+            } catch (xferError) {
+              App.showToast(
+                `Member ${name} (${member.id}) was created, but the deposit transfer was rejected: ${xferError.message}. Ask the teller to post the opening deposit manually.`,
+                'warning'
+              );
             }
             return;
           }

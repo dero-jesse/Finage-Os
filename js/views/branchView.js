@@ -299,21 +299,31 @@ const BranchView = {
               <div id="sub-form-savings" style="background: rgba(0,0,0,0.2); padding: 1rem; border-radius: 8px;">
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
                   <div>
-                    <label class="form-label">Initial Deposit (${Formatter.currencySymbol}) — Posted by Teller</label>
+                    <label class="form-label">Opening Deposit Amount (${Formatter.currencySymbol})</label>
                     <input type="number" id="new-member-deposit" class="form-control" value="0" min="0">
                     <span style="font-size: 0.72rem; color: var(--text-dim); margin-top: 0.25rem; display: block;">
-                      ⓘ Teller will post the physical cash at counter
+                      ⓘ Creates a pending transfer — teller posts physical cash
                     </span>
                   </div>
                   <div>
-                    <label class="form-label">Primary Financial Goal</label>
-                    <select id="new-savings-goal" class="form-control">
-                      <option value="general">General Savings</option>
-                      <option value="emergency">Emergency Fund</option>
-                      <option value="asset">Asset Accumulation</option>
-                      <option value="retirement">Retirement Planning</option>
+                    <label class="form-label">Assign to Teller Till</label>
+                    <select id="new-member-teller-till" class="form-control">
+                      <option value="">— No initial deposit —</option>
+                      ${(currentBranch.tillBalances || []).map(t => `<option value="${t.id || t.tellerId}">${t.tellerName || t.tellerId} · ${Formatter.money(t.balance || 0)} float</option>`).join('')}
                     </select>
+                    <span style="font-size: 0.72rem; color: var(--accent-amber); margin-top: 0.25rem; display: block;">
+                      ⚠ FOSA cannot post cash directly — teller must accept
+                    </span>
                   </div>
+                </div>
+                <div style="margin-top: 0.75rem;">
+                  <label class="form-label">Primary Financial Goal</label>
+                  <select id="new-savings-goal" class="form-control">
+                    <option value="general">General Savings</option>
+                    <option value="emergency">Emergency Fund</option>
+                    <option value="asset">Asset Accumulation</option>
+                    <option value="retirement">Retirement Planning</option>
+                  </select>
                 </div>
               </div>
               <div id="sub-form-loan" style="background: rgba(0,0,0,0.2); padding: 1rem; border-radius: 8px; display: none;">
@@ -769,17 +779,24 @@ const BranchView = {
       const kin = container.querySelector('#new-member-kin').value.trim();
       const accType = accTypeSelect.value;
       const deposit = Number(container.querySelector('#new-member-deposit').value) || 0;
+      const assignedTillId = container.querySelector('#new-member-teller-till')?.value || '';
+
       if (accType === 'loan') {
         App.showToast('A loan account cannot be opened during member registration. Submit an application through the Credit workflow.', 'danger');
         return;
       }
-      if (deposit > 0 && accType !== 'savings') {
-        App.showToast('Online opening deposits currently support savings accounts only.', 'danger');
+      if (deposit > 0 && !assignedTillId) {
+        App.showToast('Select a teller till to receive the opening deposit. FOSA cannot post cash directly.', 'danger');
         return;
       }
+      if (deposit > 0 && accType !== 'savings') {
+        App.showToast('Opening deposits support savings accounts only. Clear the deposit or switch to savings.', 'danger');
+        return;
+      }
+
       finalBtn.disabled = true;
       const originalLabel = finalBtn.textContent;
-      finalBtn.textContent = 'Posting transaction…';
+      finalBtn.textContent = 'Registering member…';
 
       let newMember;
       try {
@@ -798,25 +815,27 @@ const BranchView = {
         return;
       }
 
-      if ((accType === 'savings' || accType === 'fixed' || accType === 'shares') && deposit > 0) {
+      // Opening deposit: route through teller cash transfer — FOSA must NOT post cash directly.
+      if (accType === 'savings' && deposit > 0 && assignedTillId) {
+        finalBtn.textContent = 'Requesting teller float…';
         try {
-          const posting = await Platform.postFinancialTransaction({
-            type: 'Member Deposit',
-            memberId: newMember.id,
+          await Platform.initiateCashTransfer({
+            branchId: currentBranch.id,
+            transferType: 'vault_to_teller',
+            fromUserId: 'VAULT',
+            toUserId: assignedTillId,
             amount: deposit,
-            channel: 'Branch FOSA Counter',
-            description: `Opening savings deposit for ${name} at ${currentBranch.name}`,
-            legs: [
-              { glCode: '1010', type: 'Debit', amount: deposit },
-              { glCode: '2010', type: 'Credit', amount: deposit }
-            ]
+            notes: `Opening deposit for new member ${name} (${newMember.id}) — teller to post Member Deposit after physical cash count`
           });
-          App.showToast(posting.refreshError
-            ? `Supabase accepted the member and deposit; refreshed balances could not be loaded: ${posting.refreshError.message}`
-            : `Member ${name} and opening deposit ${posting.transaction.id} accepted by Supabase.`,
-          posting.refreshError ? 'warning' : 'success');
-        } catch (error) {
-          App.showToast(`Member ${name} (${newMember.id}) was created by Supabase, but the deposit was rejected: ${error.message}. The account remains at zero savings.`, 'danger');
+          App.showToast(
+            `Member ${name} (${newMember.id}) registered. Opening deposit of ${Formatter.money(deposit)} is a pending transfer to till ${assignedTillId}. Teller must confirm receipt and post the GL entry.`,
+            'success'
+          );
+        } catch (xferError) {
+          App.showToast(
+            `Member ${name} (${newMember.id}) was created, but the pending deposit transfer was rejected: ${xferError.message}. Ask the teller to post the opening deposit manually.`,
+            'warning'
+          );
         }
       } else if (newMember.refreshError) {
         App.showToast(`Member ${name} (${newMember.id}) was accepted by Supabase; refresh failed: ${newMember.refreshError.message}`, 'warning');

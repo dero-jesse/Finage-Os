@@ -161,7 +161,10 @@ const UserManagementView = {
                     ${u.id === state.currentUserId ? `
                       <span class="badge badge-aqua" style="font-weight: 700; margin-right: 4px;">Active Context</span>
                     ` : ''}
-                    ${canManageUsers ? `<button class="btn btn-secondary btn-sm btn-edit-roles" data-id="${u.id}">Edit Roles</button>` : ''}
+                    ${canManageUsers ? `
+                      <button class="btn btn-secondary btn-sm btn-edit-roles" data-id="${u.id}">Edit Roles</button>
+                      <button class="btn btn-outline btn-sm btn-resend-invite" data-id="${u.id}" data-email="${u.email}">Resend Code</button>
+                    ` : ''}
                   </td>
                 </tr>
               `).join('')}
@@ -399,6 +402,27 @@ const UserManagementView = {
         if (tabBody) {
           tabBody.innerHTML = this.renderActiveTab(state);
           this.bindTabSpecificEvents(container, state);
+        }
+      });
+    });
+
+    // Resend invite / password setup code
+    container.querySelectorAll('.btn-resend-invite').forEach(btn => {
+      btn.addEventListener('click', async e => {
+        const email = e.currentTarget.dataset.email;
+        const button = e.currentTarget;
+        button.disabled = true;
+        button.textContent = 'Sending…';
+        try {
+          if (window.supabase) {
+            await window.supabase.auth.resetPasswordForEmail(email);
+          }
+          App.showToast(`Verification code sent to ${email}.`, 'success');
+        } catch (err) {
+          App.showToast(`Failed to send code: ${err.message}`, 'danger');
+        } finally {
+          button.disabled = false;
+          button.textContent = 'Resend Code';
         }
       });
     });

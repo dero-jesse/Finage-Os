@@ -483,6 +483,62 @@ const InputModalView = {
           </button>
         </div>
       </form>
+
+      <form id="form-settle-expense" style="display: flex; flex-direction: column; gap: 1rem; margin-top: 1.5rem; padding-top: 1.25rem; border-top: 1px solid var(--border-subtle);">
+        <div>
+          <h3 style="margin: 0 0 .35rem; font-size: .95rem; font-weight: 700; color: var(--text-main);">Disburse & Settle Operating Expense</h3>
+          <p style="margin: 0; color: var(--text-dim); font-size: .78rem;">Generate an official payment voucher and execute real-time double-entry posting to the General Ledger.</p>
+        </div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+          <div class="form-group" style="margin: 0;">
+            <label class="form-label">Payee / Vendor Name</label>
+            <input type="text" id="inp-settle-payee" class="form-control" placeholder="e.g. UMEME Electricity / Office Supplies" required>
+          </div>
+          <div class="form-group" style="margin: 0;">
+            <label class="form-label">Invoice / Bill Reference</label>
+            <input type="text" id="inp-settle-invoice" class="form-control" placeholder="e.g. INV-2026-091" required>
+          </div>
+        </div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem;">
+          <div class="form-group" style="margin: 0;">
+            <label class="form-label">Expense Account (Debit)</label>
+            <select id="inp-settle-expense-gl" class="form-control" required>
+              ${(state.generalLedger || []).filter(g => (g.category || g.type || '').toLowerCase().includes('expense') || String(g.code).startsWith('5')).map(g => `<option value="${g.code}">${g.code} · ${g.name}</option>`).join('')}
+            </select>
+          </div>
+          <div class="form-group" style="margin: 0;">
+            <label class="form-label">Funding Account (Credit)</label>
+            <select id="inp-settle-funding-gl" class="form-control" required>
+              <option value="1020">1020 · Commercial Bank Clearing</option>
+              <option value="1010">1010 · Branch Cash Vault</option>
+              <option value="1040">1040 · Mobile Float Wallet</option>
+            </select>
+          </div>
+          <div class="form-group" style="margin: 0;">
+            <label class="form-label">Amount (${Formatter.currencySymbol})</label>
+            <input type="number" id="inp-settle-amount" class="form-control" min="0.01" step="any" required>
+          </div>
+        </div>
+        <div style="display: grid; grid-template-columns: 1fr 2fr; gap: 1rem;">
+          <div class="form-group" style="margin: 0;">
+            <label class="form-label">Payment Method</label>
+            <select id="inp-settle-method" class="form-control">
+              <option value="Bank Transfer">Bank Transfer (EFT/RTGS)</option>
+              <option value="Cash Voucher">Cash Voucher</option>
+              <option value="Corporate Mobile Float">Corporate Mobile Float</option>
+            </select>
+          </div>
+          <div class="form-group" style="margin: 0;">
+            <label class="form-label">Payment Description / Purpose</label>
+            <input type="text" id="inp-settle-desc" class="form-control" placeholder="e.g. Branch operational utilities settlement" required>
+          </div>
+        </div>
+        <div style="display: flex; justify-content: flex-end; gap: 0.75rem; margin-top: 0.5rem;">
+          <button type="submit" class="btn btn-primary" id="btn-submit-settle-expense">
+            Disburse & Issue Voucher
+          </button>
+        </div>
+      </form>
     `;
   },
 
@@ -1046,6 +1102,53 @@ const InputModalView = {
       });
     }
 
+    // TAB 4: Settle Expense Form
+    const settleForm = container.querySelector('#form-settle-expense');
+    if (settleForm) {
+      settleForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const submitBtn = settleForm.querySelector('#btn-submit-settle-expense');
+        const payeeName = container.querySelector('#inp-settle-payee')?.value.trim();
+        const invoiceRef = container.querySelector('#inp-settle-invoice')?.value.trim();
+        const expenseGL = container.querySelector('#inp-settle-expense-gl')?.value;
+        const fundingGL = container.querySelector('#inp-settle-funding-gl')?.value;
+        const amount = Number(container.querySelector('#inp-settle-amount')?.value);
+        const paymentMethod = container.querySelector('#inp-settle-method')?.value;
+        const description = container.querySelector('#inp-settle-desc')?.value.trim();
+
+        if (expenseGL === fundingGL) {
+          App.showToast('Debit and credit accounts must be different.', 'danger');
+          return;
+        }
+
+        submitBtn.disabled = true;
+        const origText = submitBtn.textContent;
+        submitBtn.textContent = 'Posting transaction…';
+
+        try {
+          settleForm.dataset.idempotencyKey ||= crypto.randomUUID();
+          const outcome = await Platform.settleExpense({
+            payeeName,
+            invoiceRef,
+            expenseGL,
+            fundingGL,
+            amount,
+            paymentMethod,
+            description
+          }, { idempotencyKey: settleForm.dataset.idempotencyKey });
+
+          App.showToast(`Expense voucher issued: ${outcome.result?.id || 'Settled'} (${Formatter.money(amount)} paid to ${payeeName}).`, 'success');
+          delete settleForm.dataset.idempotencyKey;
+          modal.classList.remove('active');
+        } catch (error) {
+          App.showToast(`Expense settlement rejected: ${error.message}`, 'danger');
+        } finally {
+          submitBtn.disabled = false;
+          submitBtn.textContent = origText;
+        }
+      });
+    }
+
     // TAB 5: Bulk Ingestion
     const bulkTextarea = container.querySelector('#inp-bulk-csv');
     const processBulkBtn = container.querySelector('#btn-process-bulk-csv');
@@ -1053,27 +1156,58 @@ const InputModalView = {
       processBulkBtn.addEventListener('click', async () => {
         const text = bulkTextarea.value.trim();
         if (!text) {
-          alert('Please enter or load CSV lines first.');
+          App.showToast('Please enter or load CSV lines first.', 'warning');
           return;
         }
 
-        const lines = text.split('\n');
+        const lines = text.split('\n').filter(l => l.trim().length > 0);
         const txList = [];
-        lines.forEach(line => {
+        for (const line of lines) {
           const parts = line.split(',').map(p => p.trim());
           if (parts.length >= 3) {
+            const type = parts[0];
+            const memberId = parts[1];
+            const amount = Number(parts[2]);
+            if (isNaN(amount) || amount <= 0) continue;
+            const channel = parts[3] || 'Batch Ingestion';
+            const description = parts[4] || 'Core Banking Batch Feed';
+            const glPairs = {
+              'Member Deposit': { debitGL: '1010', creditGL: '2010' },
+              'Teller Deposit': { debitGL: '1010', creditGL: '2010' },
+              'Loan Repayment': { debitGL: '1010', creditGL: '1200' },
+              'Share Capital Purchase': { debitGL: '1020', creditGL: '3010' }
+            };
+            const pair = glPairs[type] || { debitGL: '1010', creditGL: '2010' };
             txList.push({
-              type: parts[0],
-              memberId: parts[1],
-              amount: Number(parts[2]),
-              channel: parts[3] || 'Batch Ingestion',
-              description: parts[4] || 'Core Banking Batch Feed'
+              type,
+              memberId,
+              amount,
+              debitGL: pair.debitGL,
+              creditGL: pair.creditGL,
+              channel,
+              description
             });
           }
-        });
+        }
 
-        if (txList.length > 0) {
-          App.showToast('Batch ingestion is disabled until a dedicated atomic, per-row server import RPC is deployed. No rows were posted.', 'danger');
+        if (txList.length === 0) {
+          App.showToast('No valid CSV rows parsed. Check format: Type, MemberID, Amount, Channel, Description', 'danger');
+          return;
+        }
+
+        processBulkBtn.disabled = true;
+        const origLabel = processBulkBtn.textContent;
+        processBulkBtn.textContent = 'Posting transaction…';
+
+        try {
+          await Platform.batchPostTransactions(txList);
+          App.showToast(`Batch accepted: ${txList.length} transactions posted atomically into General Ledger.`, 'success');
+          modal.classList.remove('active');
+        } catch (error) {
+          App.showToast(`Batch posting rejected: ${error.message}`, 'danger');
+        } finally {
+          processBulkBtn.disabled = false;
+          processBulkBtn.textContent = origLabel;
         }
       });
     }

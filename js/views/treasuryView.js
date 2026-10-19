@@ -189,6 +189,73 @@ const TreasuryView = {
         </div>
 
         <div class="workspace-grid">
+          <!-- Commercial Bank Clearing Accounts Subledger -->
+          <section class="workspace-card workspace-card--wide">
+            <div class="workspace-card-header">
+              <div>
+                <div class="workspace-card-title">Commercial Bank Accounts Subledger (GL 1020)</div>
+                <div class="hero-caption">Individual commercial bank account floats and clearing positions</div>
+              </div>
+              <button id="btn-add-bank-account" class="btn btn-outline btn-sm">+ Add Bank Account</button>
+            </div>
+            <div class="workspace-card-body">
+              <div class="table-responsive">
+                <table class="mini-table">
+                  <thead>
+                    <tr>
+                      <th>Bank Institution</th>
+                      <th>Account Number</th>
+                      <th>Title</th>
+                      <th>Currency</th>
+                      <th class="text-right">Balance</th>
+                      <th>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${(state.bankAccounts || []).length ? (state.bankAccounts || []).map(b => `
+                      <tr>
+                        <td><strong>${b.bankName}</strong></td>
+                        <td class="cell-mono">${b.accountNumber}</td>
+                        <td>${b.accountTitle || b.bankName}</td>
+                        <td>${b.currency || 'UGX'}</td>
+                        <td class="text-right cell-mono"><strong>${Formatter.money(b.balance)}</strong></td>
+                        <td><span class="badge ${b.isActive !== false ? 'badge-emerald' : 'badge-rose'}">${b.isActive !== false ? 'Active' : 'Inactive'}</span></td>
+                      </tr>
+                    `).join('') : `
+                      <tr>
+                        <td colspan="6" style="text-align:center;color:var(--text-dim);">No individual bank subledger accounts registered yet.</td>
+                      </tr>
+                    `}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </section>
+
+          <!-- Investment Yield Accrual Engine -->
+          <section class="workspace-card workspace-card--side">
+            <div class="workspace-card-header">
+              <div class="workspace-card-title">Yield Accrual Engine</div>
+              <span class="solid-note">${(state.shortTermInvestments || []).filter(i => i.status === 'Active').length} Active</span>
+            </div>
+            <div class="workspace-card-body">
+              <p style="margin: 0 0 0.85rem; font-size: 0.775rem; color: var(--text-dim);">
+                Accrue periodic interest on outstanding treasury positions (Dr 1310 Accrued Investment Income / Cr 4020 Investment Yield).
+              </p>
+              ${(state.shortTermInvestments || []).filter(i => i.status === 'Active').map(inv => `
+                <div style="display: flex; justify-content: space-between; align-items: center; background: #f8fafc; padding: 0.5rem; border-radius: 6px; margin-bottom: 0.5rem; font-size: 0.775rem;">
+                  <div>
+                    <strong>${inv.institution}</strong> (${inv.product})
+                    <div style="color: var(--text-dim); font-size: 0.7rem;">Principal: ${Formatter.money(inv.principal)} @ ${inv.annualYield}%</div>
+                  </div>
+                  <button type="button" class="btn btn-outline btn-sm btn-run-accrual" data-id="${inv.id}" data-principal="${inv.principal}" data-yield="${inv.annualYield}">Accrue</button>
+                </div>
+              `).join('')}
+            </div>
+          </section>
+        </div>
+
+        <div class="workspace-grid">
           <section class="workspace-card workspace-card--side">
             <div class="workspace-card-header">
               <div class="workspace-card-title">Delivery channels</div>
@@ -320,6 +387,56 @@ const TreasuryView = {
         App.showToast('Trial Balance Exception Log exported as CSV.', 'success');
       });
     }
+
+    // Add Bank Account
+    const addBankBtn = container.querySelector('#btn-add-bank-account');
+    if (addBankBtn) {
+      addBankBtn.addEventListener('click', async () => {
+        const bankName = prompt('Enter Bank Institution Name (e.g. Stanbic Bank, Absa, Centenary):');
+        if (!bankName) return;
+        const accountNumber = prompt('Enter Bank Account Number:');
+        if (!accountNumber) return;
+        const accountTitle = prompt('Enter Account Purpose / Title:', `${bankName} Operations`);
+        try {
+          await Platform.manageBankAccount({
+            bankName,
+            accountNumber,
+            accountTitle: accountTitle || bankName,
+            glCode: '1020',
+            currency: 'UGX',
+            balance: 0,
+            isActive: true
+          });
+          App.showToast(`Commercial bank account ${bankName} registered under GL 1020.`, 'success');
+        } catch (err) {
+          App.showToast(`Failed to register bank account: ${err.message}`, 'danger');
+        }
+      });
+    }
+
+    // Run Yield Accrual
+    container.querySelectorAll('.btn-run-accrual').forEach(btn => {
+      btn.addEventListener('click', async e => {
+        const posId = e.currentTarget.dataset.id;
+        const principal = Number(e.currentTarget.dataset.principal) || 0;
+        const yieldRate = Number(e.currentTarget.dataset.yield) || 0;
+        const monthlyYield = Math.max(1, Math.round((principal * (yieldRate / 100)) / 12));
+        const button = e.currentTarget;
+        button.disabled = true;
+        button.textContent = 'Posting transaction…';
+        try {
+          await Platform.accrueInvestmentYield({
+            positionId: posId,
+            amount: monthlyYield
+          });
+          App.showToast(`Accrued ${Formatter.money(monthlyYield)} yield into GL 1310/4020.`, 'success');
+        } catch (err) {
+          App.showToast(`Yield accrual rejected: ${err.message}`, 'danger');
+          button.disabled = false;
+          button.textContent = 'Accrue';
+        }
+      });
+    });
   }
 };
 

@@ -31,7 +31,13 @@ const Platform = {
       branch_reconcile: false,
       till_reconcile: false,
       portfolio_provision: false,
-      user_manage: false
+      user_manage: false,
+      cash_transfer: false,
+      expense_settle: false,
+      bank_manage: false,
+      yield_accrue: false,
+      batch_post: false,
+      committee_approve: false
     },
 
     emptyWriteCapabilities() {
@@ -39,7 +45,9 @@ const Platform = {
         member_create: false, counter_post: false, manual_journal: false,
         credit_application: false, credit_admin: false, treasury_drawdown: false,
         credit_release: false, treasury_invest: false, opex_manage: false, branch_reconcile: false,
-        till_reconcile: false, portfolio_provision: false, user_manage: false
+        till_reconcile: false, portfolio_provision: false, user_manage: false,
+        cash_transfer: false, expense_settle: false, bank_manage: false,
+        yield_accrue: false, batch_post: false, committee_approve: false
       };
     },
 
@@ -61,7 +69,14 @@ const Platform = {
         redeem_investment: 'treasury_invest',
         post_portfolio_provision: 'portfolio_provision',
         update_user_roles: 'user_manage',
-        update_user_status: 'user_manage'
+        update_user_status: 'user_manage',
+        initiate_cash_transfer: 'cash_transfer',
+        accept_cash_transfer: 'cash_transfer',
+        settle_expense: 'expense_settle',
+        manage_bank_account: 'bank_manage',
+        accrue_investment_yield: 'yield_accrue',
+        batch_post_transactions: 'batch_post',
+        committee_review_decision: 'committee_approve'
       }[action];
       const authorized = action === 'disburse_loan_application'
         ? this.context.writeCapabilities.credit_admin === true || this.context.writeCapabilities.credit_release === true
@@ -129,7 +144,9 @@ const Platform = {
       credit_application: false, credit_admin: false, credit_release: false,
       treasury_drawdown: false, treasury_invest: false, opex_manage: false,
       branch_reconcile: false, till_reconcile: false,
-      portfolio_provision: false, user_manage: false
+      portfolio_provision: false, user_manage: false,
+      cash_transfer: false, expense_settle: false, bank_manage: false,
+      yield_accrue: false, batch_post: false, committee_approve: false
     };
   },
 
@@ -290,7 +307,9 @@ const Platform = {
       const tables = [
         'roles', 'users', 'branches', 'members', 'general_ledger', 'transactions', 'audit_trail',
         'loan_products', 'loan_applications', 'workflow_tasks', 'external_facilities',
-        'operating_expenses', 'branch_reconciliations', 'investment_positions'
+        'operating_expenses', 'branch_reconciliations', 'investment_positions',
+        'branch_cash_transfers', 'expense_settlements', 'bank_accounts', 'investment_accruals',
+        'batch_import_jobs', 'committee_reviews'
       ];
       const results = await Promise.all(tables.map(table =>
         window.supabase.schema(schemaName).from(table).select('*')
@@ -308,7 +327,9 @@ const Platform = {
       );
       const [roles, users, branches, members, ledger, transactions, audit,
         loanProductRows, applicationRows, workflowRows, facilityRows, expenseRows,
-        reconciliationRows, investmentRows] = rows;
+        reconciliationRows, investmentRows,
+        cashTransferRows, expenseSettlementRows, bankAccountRows, investmentAccrualRows,
+        batchJobRows, committeeReviewRows] = rows;
       const loanProducts = loanProductRows.map(row => ({
         id: row.id, name: row.name, annualInterestRate: Number(row.annual_interest_rate) || 0,
         rateConfigured: true, repaymentMethod: row.repayment_method,
@@ -356,6 +377,39 @@ const Platform = {
         principal: Number(row.principal) || 0, annualYield: Number(row.annual_yield) || 0,
         placementDate: row.placed_at, maturityDate: row.maturity_date, status: row.status
       }));
+      const cashTransfers = (cashTransferRows || []).map(row => ({
+        id: row.id, branchId: row.branch_id, transferType: row.transfer_type,
+        fromUserId: row.from_user_id, toUserId: row.to_user_id,
+        amount: Number(row.amount) || 0, status: row.status, notes: row.notes || '',
+        createdBy: row.created_by, createdAt: row.created_at, acceptedAt: row.accepted_at, acceptedBy: row.accepted_by
+      }));
+      const expenseSettlements = (expenseSettlementRows || []).map(row => ({
+        id: row.id, opexId: row.opex_id, payeeName: row.payee_name, invoiceRef: row.invoice_ref,
+        expenseGL: row.expense_gl, fundingGL: row.funding_gl, amount: Number(row.amount) || 0,
+        paymentMethod: row.payment_method, voucherNumber: row.voucher_number,
+        description: row.description || '', transactionId: row.transaction_id, settledAt: row.settled_at, createdBy: row.created_by
+      }));
+      const bankAccounts = (bankAccountRows || []).map(row => ({
+        id: row.id, bankName: row.bank_name, accountNumber: row.account_number,
+        accountTitle: row.account_title, glCode: row.gl_code || '1020',
+        currency: row.currency || 'UGX', balance: Number(row.current_balance) || 0,
+        isActive: row.is_active !== false
+      }));
+      const investmentAccruals = (investmentAccrualRows || []).map(row => ({
+        id: row.id, positionId: row.position_id, accrualDate: row.accrual_date,
+        accruedAmount: Number(row.accrued_amount) || 0, glDebit: row.gl_debit, glCredit: row.gl_credit,
+        transactionId: row.transaction_id, createdBy: row.created_by, createdAt: row.created_at
+      }));
+      const batchJobs = (batchJobRows || []).map(row => ({
+        id: row.id, batchType: row.batch_type, totalRows: Number(row.total_rows) || 0,
+        successfulRows: Number(row.successful_rows) || 0, failedRows: Number(row.failed_rows) || 0,
+        status: row.status, summary: row.summary || {}, createdAt: row.created_at
+      }));
+      const committeeReviews = (committeeReviewRows || []).map(row => ({
+        id: row.id, applicationId: row.application_id, requiredSignatures: Number(row.required_signatures) || 2,
+        currentSignatures: Number(row.current_signatures) || 0, signers: row.signers || [],
+        status: row.status, comments: row.comments || '', updatedAt: row.updated_at
+      }));
       Object.assign(window.store.state, {
         roles,
         users,
@@ -378,6 +432,12 @@ const Platform = {
         operatingExpenses,
         branchReconciliations: reconciliationRows,
         shortTermInvestments,
+        cashTransfers,
+        expenseSettlements,
+        bankAccounts: bankAccounts.length ? bankAccounts : window.store.state.bankAccounts,
+        investmentAccruals,
+        batchJobs,
+        committeeReviews,
         loanPenaltyPolicyVersion: Math.max(1, ...loanProducts.map(item => item.policyVersion || 1))
       });
       this.context.operationalCounts = {
@@ -385,7 +445,9 @@ const Platform = {
         transactions: transactions.length, auditTrail: audit.length,
         loanProducts: loanProducts.length, loanApplications: disbursementQueue.length,
         workflows: workflowTasks.length, treasuryFacilities: externalFacilities.length,
-        operatingExpenses: operatingExpenses.length, investments: shortTermInvestments.length
+        operatingExpenses: operatingExpenses.length, investments: shortTermInvestments.length,
+        cashTransfers: cashTransfers.length, expenseSettlements: expenseSettlements.length,
+        bankAccounts: bankAccounts.length, batchJobs: batchJobs.length
       };
       const hasOperationalData = Object.values(this.context.operationalCounts).some(count => count > 0);
       try {
@@ -747,6 +809,34 @@ const Platform = {
     }
     await this.loadOperationalData();
     return updatedOrg;
+  },
+
+  async initiateCashTransfer(payload, options) {
+    return this.executeDomainAction('initiate_cash_transfer', payload, options);
+  },
+
+  async acceptCashTransfer(transferId, options) {
+    return this.executeDomainAction('accept_cash_transfer', { transferId }, options);
+  },
+
+  async settleExpense(payload, options) {
+    return this.executeDomainAction('settle_expense', payload, options);
+  },
+
+  async manageBankAccount(payload, options) {
+    return this.executeDomainAction('manage_bank_account', payload, options);
+  },
+
+  async accrueInvestmentYield(payload, options) {
+    return this.executeDomainAction('accrue_investment_yield', payload, options);
+  },
+
+  async batchPostTransactions(transactions, options) {
+    return this.executeDomainAction('batch_post_transactions', { transactions }, options);
+  },
+
+  async recordCommitteeDecision(payload, options) {
+    return this.executeDomainAction('committee_review_decision', payload, options);
   },
 
   getOrganizations() { return this.context.organizations; },

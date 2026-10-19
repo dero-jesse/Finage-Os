@@ -445,6 +445,61 @@ const BranchView = {
             </div>
           </div>
 
+          <!-- Branch Cash Transfers Panel -->
+          <div class="panel" style="margin-top: 1rem;">
+            <div class="panel-header" style="display: flex; justify-content: space-between; align-items: center;">
+              <span class="panel-title">Vault ⇄ Teller Cash Transfers</span>
+              <span class="badge badge-aqua">Dual Custody</span>
+            </div>
+            <div style="padding: 1rem; display: flex; flex-direction: column; gap: 0.85rem;">
+              <form id="form-cash-transfer" style="display: flex; flex-direction: column; gap: 0.75rem;">
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem;">
+                  <label class="form-label" style="font-size: 0.75rem;">Transfer Type
+                    <select id="inp-xfer-type" class="form-control" style="font-size: 0.8rem;">
+                      <option value="vault_to_teller">Vault → Teller Float</option>
+                      <option value="teller_to_vault">Teller → Vault Surrender</option>
+                    </select>
+                  </label>
+                  <label class="form-label" style="font-size: 0.75rem;">Teller Drawer
+                    <select id="inp-xfer-teller" class="form-control" style="font-size: 0.8rem;">
+                      ${(currentBranch.tillBalances || []).map(t => `<option value="${t.id}">${t.tellerName || t.id} (${Formatter.money(t.balance || 0)})</option>`).join('')}
+                    </select>
+                  </label>
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 1.5fr; gap: 0.5rem;">
+                  <label class="form-label" style="font-size: 0.75rem;">Amount (${Formatter.currencySymbol})
+                    <input type="number" id="inp-xfer-amount" class="form-control" min="1" step="any" required style="font-size: 0.8rem;">
+                  </label>
+                  <label class="form-label" style="font-size: 0.75rem;">Transfer Notes
+                    <input type="text" id="inp-xfer-notes" class="form-control" placeholder="e.g. Morning counter float" style="font-size: 0.8rem;">
+                  </label>
+                </div>
+                <button type="submit" id="btn-submit-xfer" class="btn btn-primary btn-sm" style="align-self: flex-end;">
+                  Initiate Float Transfer
+                </button>
+              </form>
+
+              ${(state.cashTransfers || []).filter(x => x.status === 'pending' && x.branchId === currentBranch.id).length ? `
+                <div style="border-top: 1px solid var(--border-subtle); padding-top: 0.75rem;">
+                  <span style="font-size: 0.75rem; font-weight: 700; color: var(--text-main); display: block; margin-bottom: 0.4rem;">
+                    Pending Cash Transfers Awaiting Receipt:
+                  </span>
+                  <div style="display: flex; flex-direction: column; gap: 0.4rem;">
+                    ${(state.cashTransfers || []).filter(x => x.status === 'pending' && x.branchId === currentBranch.id).map(x => `
+                      <div style="display: flex; justify-content: space-between; align-items: center; background: #f8fafc; padding: 0.5rem; border-radius: 6px; font-size: 0.75rem;">
+                        <div>
+                          <strong>${x.transferType === 'vault_to_teller' ? 'Vault → Teller' : 'Teller → Vault'}</strong>: ${Formatter.money(x.amount)}
+                          <div style="color: var(--text-dim); font-size: 0.7rem;">${x.notes || 'Float allocation'}</div>
+                        </div>
+                        <button type="button" class="btn btn-emerald btn-sm btn-accept-xfer" data-id="${x.id}">Accept Cash</button>
+                      </div>
+                    `).join('')}
+                  </div>
+                </div>
+              ` : ''}
+            </div>
+          </div>
+
         </div>
       </div>
       </div>
@@ -492,6 +547,58 @@ const BranchView = {
         button.disabled = false;
         App.showToast(`Vault reconciliation rejected: ${error.message}`, 'danger');
       }
+    });
+
+    // --- Cash Transfers ---
+    const xferForm = container.querySelector('#form-cash-transfer');
+    if (xferForm) {
+      xferForm.addEventListener('submit', async e => {
+        e.preventDefault();
+        const transferType = container.querySelector('#inp-xfer-type')?.value;
+        const tellerId = container.querySelector('#inp-xfer-teller')?.value;
+        const amount = Number(container.querySelector('#inp-xfer-amount')?.value);
+        const notes = container.querySelector('#inp-xfer-notes')?.value.trim();
+        const submitBtn = container.querySelector('#btn-submit-xfer');
+
+        submitBtn.disabled = true;
+        const origText = submitBtn.textContent;
+        submitBtn.textContent = 'Posting transaction…';
+
+        try {
+          await Platform.initiateCashTransfer({
+            branchId: currentBranch.id,
+            transferType,
+            fromUserId: transferType === 'vault_to_teller' ? 'VAULT' : tellerId,
+            toUserId: transferType === 'vault_to_teller' ? tellerId : 'VAULT',
+            amount,
+            notes
+          });
+          App.showToast(`Float transfer of ${Formatter.money(amount)} initiated.`, 'success');
+          xferForm.reset();
+        } catch (err) {
+          App.showToast(`Transfer rejected: ${err.message}`, 'danger');
+        } finally {
+          submitBtn.disabled = false;
+          submitBtn.textContent = origText;
+        }
+      });
+    }
+
+    container.querySelectorAll('.btn-accept-xfer').forEach(btn => {
+      btn.addEventListener('click', async e => {
+        const transferId = e.currentTarget.dataset.id;
+        const button = e.currentTarget;
+        button.disabled = true;
+        button.textContent = 'Posting transaction…';
+        try {
+          await Platform.acceptCashTransfer(transferId);
+          App.showToast('Cash transfer confirmed and added to drawer float.', 'success');
+        } catch (err) {
+          App.showToast(`Accept transfer failed: ${err.message}`, 'danger');
+          button.disabled = false;
+          button.textContent = 'Accept Cash';
+        }
+      });
     });
 
     container.querySelector('#btn-submit-eod-reconciliation')?.addEventListener('click', async event => {

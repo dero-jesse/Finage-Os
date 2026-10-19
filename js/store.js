@@ -874,7 +874,12 @@ class FinageStore {
         { id: 'TX-903', type: 'Share Capital', client: 'Eldoret Farmers Union', amount: 25000, time: '14:30', status: 'Completed', channel: 'Agency Banking' },
         { id: 'TX-904', type: 'Branch Cash Transfer', client: 'Nairobi Central -> Stanbic Bank', amount: 150000, time: '13:10', status: 'Completed', channel: 'Treasury' },
         { id: 'TX-905', type: 'Loan Disbursement', client: 'Wanjiku Wholesale Ltd', amount: 80000, time: '11:20', status: 'Completed', channel: 'Bank Transfer' }
-      ]
+      ],
+      cashTransfers: [],
+      expenseSettlements: [],
+      investmentAccruals: [],
+      batchJobs: [],
+      committeeReviews: []
     };
   }
 
@@ -893,7 +898,8 @@ class FinageStore {
       'ledger', 'trialBalanceExceptions', 'smsAlerts', 'channels', 'workflowTasks',
       'bankAccounts', 'shortTermInvestments', 'depositLiabilities', 'maturityBuckets',
       'externalFacilities', 'operatingExpenses', 'portfolioQuality', 'disbursementQueue',
-      'stressTesting', 'alerts', 'npaSummary'
+      'stressTesting', 'alerts', 'npaSummary',
+      'cashTransfers', 'expenseSettlements', 'investmentAccruals', 'batchJobs', 'committeeReviews'
     ];
     const cleanState = this.getCleanState();
     localDataKeys.forEach(key => {
@@ -1972,6 +1978,11 @@ class FinageStore {
     base.bankAccounts = [];
     base.channels = [];
     base.alerts = [];
+    base.cashTransfers = [];
+    base.expenseSettlements = [];
+    base.investmentAccruals = [];
+    base.batchJobs = [];
+    base.committeeReviews = [];
     
     // Zero out ledgers and accounts
     base.generalLedger = base.generalLedger.map(gl => ({ ...gl, balance: 0 }));

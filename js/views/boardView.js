@@ -134,6 +134,59 @@ const BoardView = {
         </div>
       </div>
 
+      <!-- Committee Multi-Signature Governance Queue -->
+      <div class="panel-grid" style="margin-bottom: 1.5rem;">
+        <div class="glass-panel col-12">
+          <div class="panel-header" style="display: flex; justify-content: space-between; align-items: center;">
+            <div class="panel-title-wrap">
+              <span class="panel-title">Board Credit Committee Multi-Signature Governance</span>
+              <div style="font-size: 0.725rem; color: var(--text-dim);">High-value institutional exposures requiring dual/triple board approvals</div>
+            </div>
+            <span class="badge badge-purple">Tier-2 Escalations</span>
+          </div>
+          <div style="padding: 1rem;">
+            ${(state.disbursementQueue || []).filter(app => app.amount >= 20000000 || (app.status && app.status.includes('Committee'))).length ? `
+              <div class="table-responsive">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th>Application Ref</th>
+                      <th>Borrower / Member</th>
+                      <th>Facility Amount</th>
+                      <th>Signatures Required</th>
+                      <th>Status</th>
+                      <th>Governance Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${(state.disbursementQueue || []).filter(app => app.amount >= 20000000 || (app.status && app.status.includes('Committee'))).map(app => {
+                      const review = (state.committeeReviews || []).find(r => r.applicationId === app.id);
+                      const signatures = review ? `${review.currentSignatures}/${review.requiredSignatures}` : '1/2 Signatures';
+                      return `
+                        <tr>
+                          <td class="cell-mono"><strong>${app.id}</strong></td>
+                          <td>${app.clientName || app.memberId}</td>
+                          <td class="cell-mono"><strong>${Formatter.money(app.amount)}</strong></td>
+                          <td><span class="badge badge-cyan">${signatures}</span></td>
+                          <td><span class="badge badge-emerald">${review?.status || app.status}</span></td>
+                          <td>
+                            <button type="button" class="btn btn-emerald btn-sm btn-sign-committee" data-id="${app.id}">Sign & Authorize</button>
+                          </td>
+                        </tr>
+                      `;
+                    }).join('')}
+                  </tbody>
+                </table>
+              </div>
+            ` : `
+              <p style="margin: 0; font-size: 0.8rem; color: var(--text-dim); text-align: center; padding: 1rem;">
+                No high-value loan exposures currently pending Credit Committee multi-signature authorization.
+              </p>
+            `}
+          </div>
+        </div>
+      </div>
+
       <!-- Immutable System Audit Trail (Layer 7) -->
       <div class="panel-grid">
         <div class="glass-panel col-12">
@@ -230,6 +283,28 @@ const BoardView = {
         App.showToast('Cash Flow Forecast schedule exported as CSV.', 'success');
       });
     }
+
+    // Committee multi-signature approval
+    container.querySelectorAll('.btn-sign-committee').forEach(btn => {
+      btn.addEventListener('click', async e => {
+        const appId = e.currentTarget.dataset.id;
+        const button = e.currentTarget;
+        button.disabled = true;
+        button.textContent = 'Posting transaction…';
+        try {
+          await Platform.recordCommitteeDecision({
+            applicationId: appId,
+            decision: 'approved',
+            comments: 'Board committee authorization confirmed.'
+          });
+          App.showToast(`Committee signature recorded for application ${appId}.`, 'success');
+        } catch (err) {
+          App.showToast(`Committee signing rejected: ${err.message}`, 'danger');
+          button.disabled = false;
+          button.textContent = 'Sign & Authorize';
+        }
+      });
+    });
   }
 };
 

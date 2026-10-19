@@ -366,46 +366,89 @@ const BranchView = {
 
         </div>
 
-        <!-- RIGHT: Till Float Monitor + Vault Count Sheet -->
+        <!-- RIGHT: Till Management + Vault Count Sheet -->
         <div class="col-5" style="display: flex; flex-direction: column; gap: 1.5rem;">
 
-          <!-- Teller Float Monitor (read-only) -->
+          <!-- ===== TILL MANAGEMENT PANEL ===== -->
           <div class="glass-panel">
             <div class="panel-header">
               <div class="panel-title-wrap">
-                <span class="panel-title">Teller Float Monitor</span>
+                <span class="panel-title">Till Management</span>
               </div>
-              <span class="badge badge-muted">Read-Only · Cash Authority: Teller</span>
+              <div style="display: flex; gap: 0.5rem; align-items: center;">
+                <span class="badge badge-cyan">${tillBalances.length} Tills · ${Formatter.money(totalTillCash)} Float</span>
+                <button id="btn-add-till" class="btn btn-primary btn-sm" style="font-size:0.75rem;">+ New Till</button>
+              </div>
             </div>
+
+            <!-- Create / Edit Till Form (hidden by default) -->
+            <div id="till-form-wrap" style="display:none; background: rgba(0,0,0,0.25); border-radius: 8px; padding: 1rem; margin-bottom: 0.75rem; border: 1px solid var(--border-accent);">
+              <div style="font-size: 0.82rem; font-weight: 700; color: var(--accent-cyan); margin-bottom: 0.75rem;" id="till-form-title">Create New Till</div>
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
+                <div class="form-group" style="margin:0;">
+                  <label class="form-label">Till ID</label>
+                  <input type="text" id="till-f-id" class="form-control form-control-sm" placeholder="e.g. T-101">
+                </div>
+                <div class="form-group" style="margin:0;">
+                  <label class="form-label">Teller Name</label>
+                  <input type="text" id="till-f-name" class="form-control form-control-sm" placeholder="e.g. Jane Wanjiku">
+                </div>
+                <div class="form-group" style="margin:0;">
+                  <label class="form-label">Assign to User</label>
+                  <select id="till-f-user" class="form-control form-control-sm">
+                    <option value="">— Unassigned —</option>
+                    ${(state.users || [])
+                      .filter(u => u.branchId === currentBranch.id || !u.branchId)
+                      .map(u => `<option value="${u.id}">${u.name} (${u.email})</option>`)
+                      .join('')}
+                  </select>
+                </div>
+                <div class="form-group" style="margin:0;">
+                  <label class="form-label">Opening Float (${Formatter.currencySymbol})</label>
+                  <input type="number" id="till-f-balance" class="form-control form-control-sm" value="0" min="0">
+                </div>
+              </div>
+              <div style="display:flex; gap:0.5rem; justify-content:flex-end; margin-top:0.75rem;">
+                <button id="btn-till-cancel" class="btn btn-outline btn-sm">Cancel</button>
+                <button id="btn-till-save" class="btn btn-emerald btn-sm">Save Till</button>
+              </div>
+            </div>
+
+            <!-- Tills Table -->
             <div class="table-responsive">
               <table class="data-table">
                 <thead>
                   <tr>
-                    <th>Teller</th>
+                    <th>Till / Teller</th>
                     <th>Float Balance</th>
                     <th>Status</th>
-                    <th>Action</th>
+                    <th style="text-align:right;">Actions</th>
                   </tr>
                 </thead>
-                <tbody>
-                  ${tillBalances.map((t, idx) => `
-                    <tr>
+                <tbody id="till-table-body">
+                  ${tillBalances.length === 0 ? `
+                    <tr><td colspan="4" style="text-align:center; color: var(--text-dim); padding: 1.5rem; font-size: 0.82rem;">
+                      No tills configured. Click <strong>+ New Till</strong> to create one.
+                    </td></tr>
+                  ` : tillBalances.map((t, idx) => {
+                    const assignedUser = (state.users || []).find(u => u.id === t.userId || u.id === t.tellerId);
+                    return `
+                    <tr id="till-row-${idx}">
                       <td>
                         <div style="font-weight: 600; font-size: 0.85rem;">${t.tellerName}</div>
                         <div class="cell-mono" style="font-size: 0.72rem; color: var(--text-dim);">${t.tellerId}</div>
+                        ${assignedUser ? `<div style="font-size: 0.7rem; color: var(--accent-cyan);">👤 ${assignedUser.name}</div>` : '<div style="font-size: 0.7rem; color: var(--text-dim);">Unassigned</div>'}
                       </td>
                       <td class="cell-mono" style="font-weight: 700; color: var(--accent-cyan);">${Formatter.money(t.balance)}</td>
                       <td><span class="badge ${t.status === 'Reconciled' ? 'badge-emerald' : 'badge-amber'}">${t.status}</span></td>
-                      <td>
-                        <div class="inline-edit-group" id="teller-edit-${idx}" style="display:none; gap:0.5rem;">
-                          <input type="number" class="form-control form-control-sm" id="teller-input-${idx}" value="${t.balance}" style="width:90px;">
-                          <button class="btn btn-emerald btn-sm btn-save-teller" data-idx="${idx}">Save</button>
-                          <button class="btn btn-outline btn-sm btn-cancel-teller" data-idx="${idx}">✕</button>
+                      <td style="text-align:right;">
+                        <div style="display:flex; gap:0.4rem; justify-content:flex-end;">
+                          <button class="btn btn-outline btn-sm btn-till-edit" data-till-id="${t.tellerId}" data-till-name="${t.tellerName}" data-till-user="${t.userId || ''}" data-till-balance="${t.balance}" style="font-size:0.7rem;">Edit</button>
+                          <button class="btn btn-rose btn-sm btn-till-remove" data-till-id="${t.tellerId}" data-till-name="${t.tellerName}" style="font-size:0.7rem;">Remove</button>
                         </div>
-                        <button class="btn btn-outline btn-sm btn-edit-teller-trigger" data-idx="${idx}" id="teller-trigger-${idx}" style="font-size: 0.72rem;">Update Count</button>
                       </td>
-                    </tr>
-                  `).join('')}
+                    </tr>`;
+                  }).join('')}
                 </tbody>
               </table>
             </div>
@@ -550,6 +593,99 @@ const BranchView = {
         button.disabled = false;
         App.showToast(`Vault reconciliation rejected: ${error.message}`, 'danger');
       }
+    });
+
+    // --- Till Management ---
+    const tillFormWrap = container.querySelector('#till-form-wrap');
+    const tillFormTitle = container.querySelector('#till-form-title');
+    const tillFId      = container.querySelector('#till-f-id');
+    const tillFName    = container.querySelector('#till-f-name');
+    const tillFUser    = container.querySelector('#till-f-user');
+    const tillFBalance = container.querySelector('#till-f-balance');
+
+    const showTillForm = (mode = 'create', prefill = {}) => {
+      if (mode === 'edit') {
+        tillFormTitle.textContent = `Edit Till: ${prefill.tillId}`;
+        tillFId.value      = prefill.tillId || '';
+        tillFId.readOnly   = true;
+        tillFId.style.opacity = '0.5';
+        tillFName.value    = prefill.tellerName || '';
+        tillFUser.value    = prefill.userId || '';
+        tillFBalance.value = prefill.balance || 0;
+      } else {
+        tillFormTitle.textContent = 'Create New Till';
+        tillFId.readOnly   = false;
+        tillFId.style.opacity = '';
+        tillFId.value = ''; tillFName.value = ''; tillFUser.value = ''; tillFBalance.value = 0;
+      }
+      tillFormWrap.style.display = 'block';
+      tillFId.focus();
+    };
+
+    container.querySelector('#btn-add-till')?.addEventListener('click', () => showTillForm('create'));
+    container.querySelector('#btn-till-cancel')?.addEventListener('click', () => {
+      tillFormWrap.style.display = 'none';
+    });
+
+    container.querySelector('#btn-till-save')?.addEventListener('click', async () => {
+      const tillId     = tillFId.value.trim();
+      const tellerName = tillFName.value.trim();
+      const userId     = tillFUser.value || '';
+      const balance    = Number(tillFBalance.value) || 0;
+      if (!tillId || !tellerName) {
+        App.showToast('Till ID and Teller Name are required.', 'danger');
+        return;
+      }
+      const saveBtn = container.querySelector('#btn-till-save');
+      saveBtn.disabled = true;
+      saveBtn.textContent = 'Posting transaction\u2026';
+      try {
+        await store.manageTill({
+          branchId: currentBranch.id,
+          operation: 'upsert',
+          tillId,
+          tellerName,
+          userId,
+          initialBalance: balance
+        });
+        App.showToast(`Till ${tillId} saved and assigned to ${tellerName}.`, 'success');
+        tillFormWrap.style.display = 'none';
+        store.notify();
+      } catch (err) {
+        App.showToast(`Till save rejected: ${err.message}`, 'danger');
+      } finally {
+        saveBtn.disabled = false;
+        saveBtn.textContent = 'Save Till';
+      }
+    });
+
+    container.querySelectorAll('.btn-till-edit').forEach(btn => {
+      btn.addEventListener('click', e => {
+        const d = e.currentTarget.dataset;
+        showTillForm('edit', {
+          tillId: d.tillId, tellerName: d.tillName,
+          userId: d.tillUser, balance: Number(d.tillBalance) || 0
+        });
+      });
+    });
+
+    container.querySelectorAll('.btn-till-remove').forEach(btn => {
+      btn.addEventListener('click', async e => {
+        const tillId   = e.currentTarget.dataset.tillId;
+        const tillName = e.currentTarget.dataset.tillName;
+        if (!confirm(`Remove till "${tillId}" (${tillName})? This clears the teller's till assignment and cannot be undone.`)) return;
+        e.currentTarget.disabled = true;
+        e.currentTarget.textContent = 'Posting transaction\u2026';
+        try {
+          await store.manageTill({ branchId: currentBranch.id, operation: 'remove', tillId });
+          App.showToast(`Till ${tillId} removed.`, 'success');
+          store.notify();
+        } catch (err) {
+          App.showToast(`Remove failed: ${err.message}`, 'danger');
+          e.currentTarget.disabled = false;
+          e.currentTarget.textContent = 'Remove';
+        }
+      });
     });
 
     // --- Cash Transfers ---

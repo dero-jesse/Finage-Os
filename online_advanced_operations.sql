@@ -826,7 +826,135 @@ BEGIN
             v_result := jsonb_build_object('branchId',v_user_branch,'tellerId',v_teller_id,
                 'balance',v_amount,'status','Reconciled');
             v_status := 'TELLER_TILL_RECONCILED';
+        WHEN 'manage_till' THEN
+            -- Create, update, or remove a till entry in branches.tillBalances.
+            -- Also syncs users.tellerId so getCurrentTellerTill can locate the till by user.
+            -- Requires VAULT_RECONCILE permission (branch manager authority).
+            IF NOT COALESCE(v_can_reconcile,false) THEN RAISE EXCEPTION 'Vault reconciliation permission is required to manage tills.'; END IF;
+            v_branch_id := COALESCE(NULLIF(BTRIM(p_payload->>'branchId'),''), v_user_branch);
+            IF v_branch_id IS NULL THEN RAISE EXCEPTION 'A branch ID is required.'; END IF;
+            EXECUTE format('SELECT to_jsonb(b) FROM %I.branches b WHERE id=$1 FOR UPDATE',v_schema)
+                INTO v_branch USING v_branch_id;
+            IF v_branch IS NULL THEN RAISE EXCEPTION 'Branch not found.'; END IF;
+
+            DECLARE
+                v_op        TEXT  := LOWER(BTRIM(COALESCE(p_payload->>'operation','upsert')));
+                v_till_key  TEXT  := BTRIM(COALESCE(p_payload->>'tillId',''));
+                v_tname     TEXT  := BTRIM(COALESCE(p_payload->>'tellerName',''));
+                v_uid       TEXT  := NULLIF(BTRIM(COALESCE(p_payload->>'userId','')),'');
+                v_init_bal  NUMERIC := COALESCE((NULLIF(p_payload->>'initialBalance',''))::NUMERIC, 0);
+                v_new_tills JSONB;
+                v_till_obj  JSONB;
+                v_exists    BOOLEAN;
+                v_user_obj  JSONB;
+            BEGIN
+                IF v_op NOT IN ('upsert','remove') THEN
+                    RAISE EXCEPTION 'operation must be "upsert" or "remove".';
+                END IF;
+                IF v_till_key = '' THEN RAISE EXCEPTION 'A till ID is required.'; END IF;
+
+                -- Check till exists
+                SELECT jsonb_agg(t) INTO v_new_tills
+                FROM jsonb_array_elements(COALESCE(v_branch->'tillBalances','[]'::JSONB)) t
+                WHERE t->>'tellerId' = v_till_key;
+                v_exists := v_new_tills IS NOT NULL AND jsonb_array_length(v_new_tills) > 0;
+
+                IF v_op = 'remove' THEN
+                    -- Remove till, clear tellerId on previously assigned user
+                    IF v_exists THEN
+                        EXECUTE format($sql$
+                            UPDATE %1$I.branches SET "tillBalances"=(
+                                SELECT COALESCE(jsonb_agg(t),'[]'::JSONB)
+                                FROM jsonb_array_elements(COALESCE("tillBalances",'[]'::JSONB)) t
+                                WHERE t->>'tellerId' <> $2
+                            ) WHERE id=$1
+                        $sql$,v_schema) USING v_branch_id,v_till_key;
+                        -- Clear tellerId from the previously assigned user
+                        EXECUTE format($sql$
+                            UPDATE %1$I.users SET "tellerId"=NULL
+                            WHERE "tellerId"=$1 AND "branchId"=$2
+                        $sql$,v_schema) USING v_till_key,v_branch_id;
+                    END IF;
+                    v_result := jsonb_build_object('tillId',v_till_key,'branchId',v_branch_id,'operation','removed');
+                    v_status  := 'TILL_REMOVED';
+                ELSE
+                    -- Upsert: validate name
+                    IF v_tname = '' THEN RAISE EXCEPTION 'A teller name is required.'; END IF;
+                    IF v_init_bal < 0 THEN RAISE EXCEPTION 'Initial balance cannot be negative.'; END IF;
+
+                    -- If assigning a user, verify user exists in this branch
+                    IF v_uid IS NOT NULL THEN
+                        EXECUTE format('SELECT to_jsonb(u) FROM %I.users u WHERE id=$1',v_schema)
+                            INTO v_user_obj USING v_uid;
+                        IF v_user_obj IS NULL THEN RAISE EXCEPTION 'Assigned user not found.'; END IF;
+                        -- Verify user is in the same branch (or admin)
+                        IF NOT COALESCE(v_can_read_all,false) AND (v_user_obj->>'branchId') IS DISTINCT FROM v_branch_id THEN
+                            RAISE EXCEPTION 'Assigned user does not belong to this branch.';
+                        END IF;
+                        -- Clear any previous till assignment for this user
+                        EXECUTE format($sql$
+                            UPDATE %1$I.branches SET "tillBalances"=(
+                                SELECT COALESCE(jsonb_agg(
+                                    CASE WHEN t->>'userId' = $2
+                                    THEN jsonb_set(t,'{userId}','null'::JSONB,true)
+                                    ELSE t END
+                                ),'[]'::JSONB)
+                                FROM jsonb_array_elements(COALESCE("tillBalances",'[]'::JSONB)) t
+                            ) WHERE id=$1
+                        $sql$,v_schema) USING v_branch_id,v_uid;
+                    END IF;
+
+                    -- Build till object
+                    IF v_exists THEN
+                        -- Update existing till, preserve current balance unless initialBalance provided
+                        EXECUTE format($sql$
+                            SELECT jsonb_agg(CASE WHEN t->>'tellerId'=$2
+                                THEN jsonb_build_object(
+                                    'tellerId',$2,
+                                    'tellerName',$3,
+                                    'userId',COALESCE($4::TEXT, t->>'userId'),
+                                    'balance',CASE WHEN $5::TEXT IS NOT NULL THEN $5::NUMERIC
+                                               ELSE COALESCE((t->>'balance')::NUMERIC,0) END,
+                                    'status',COALESCE(t->>'status','Reconciled')
+                                ) ELSE t END)
+                            FROM jsonb_array_elements(COALESCE(b."tillBalances",'[]'::JSONB)) t
+                            FROM %1$I.branches b WHERE b.id=$1
+                        $sql$,v_schema)
+                        INTO v_new_tills USING v_branch_id,v_till_key,v_tname,v_uid,
+                            CASE WHEN (p_payload->>'initialBalance') IS NOT NULL THEN v_init_bal::TEXT ELSE NULL END;
+                        EXECUTE format('UPDATE %I.branches SET "tillBalances"=$2 WHERE id=$1',v_schema)
+                            USING v_branch_id, v_new_tills;
+                    ELSE
+                        -- Insert new till
+                        v_till_obj := jsonb_build_object(
+                            'tellerId',v_till_key,
+                            'tellerName',v_tname,
+                            'userId',v_uid,
+                            'balance',v_init_bal,
+                            'status','Reconciled'
+                        );
+                        EXECUTE format($sql$
+                            UPDATE %1$I.branches SET "tillBalances"=COALESCE("tillBalances",'[]'::JSONB)||$2
+                            WHERE id=$1
+                        $sql$,v_schema) USING v_branch_id,jsonb_build_array(v_till_obj);
+                    END IF;
+
+                    -- Sync user.tellerId
+                    IF v_uid IS NOT NULL THEN
+                        EXECUTE format('UPDATE %I.users SET "tellerId"=$1 WHERE id=$2',v_schema)
+                            USING v_till_key,v_uid;
+                    END IF;
+
+                    v_result := jsonb_build_object(
+                        'tillId',v_till_key,'branchId',v_branch_id,
+                        'tellerName',v_tname,'assignedUserId',v_uid,
+                        'balance',v_init_bal,'operation','upserted'
+                    );
+                    v_status := 'TILL_MANAGED';
+                END IF;
+            END;
         WHEN 'create_investment' THEN
+
             IF NOT COALESCE(v_can_invest,false) THEN RAISE EXCEPTION 'Treasury investment placement permission is required.'; END IF;
             v_id := 'INV-'||v_key;
             EXECUTE format('SELECT to_jsonb(i) FROM %I.investment_positions i WHERE id=$1',v_schema)

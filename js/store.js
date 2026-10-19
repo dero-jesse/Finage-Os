@@ -1931,6 +1931,17 @@ class FinageStore {
     return window.Platform.executeDomainAction('reconcile_assigned_till', { balance: Number(balance) }, options);
   }
 
+  async manageTill({ branchId, operation, tillId, tellerName, userId, initialBalance }, options = {}) {
+    return window.Platform.executeDomainAction('manage_till', {
+      branchId: branchId || '',
+      operation: operation || 'upsert',
+      tillId,
+      tellerName: tellerName || '',
+      userId: userId || '',
+      ...(initialBalance !== undefined ? { initialBalance: Number(initialBalance) } : {})
+    }, options);
+  }
+
   async recordDFIDrawdown({ facilityId, amount, notes }, options = {}) {
     return window.Platform.executeDomainAction('draw_external_facility', {
       facilityId, amount: Number(amount), notes: notes || ''

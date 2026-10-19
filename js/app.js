@@ -326,7 +326,7 @@ const App = {
             <button id="btn-confirm-legacy-import" type="button" style="padding:.65rem 1rem;border:0;border-radius:8px;background:#b45309;color:white;font-weight:700;cursor:pointer;">Confirm one-time import; do not overwrite remote data</button>`;
           this.viewport.querySelector('#btn-confirm-legacy-import').addEventListener('click', async event => {
             event.currentTarget.disabled = true;
-            event.currentTarget.textContent = 'Waiting for Supabase…';
+            event.currentTarget.textContent = 'Posting transaction…';
             try {
               const result = await Platform.importCurrentBrowserData();
               this.showToast(`Supabase accepted the one-time import (${result.counts.totalRecords} records). Operations remain read-only.`, 'success');
@@ -550,7 +550,7 @@ const App = {
       let accepted = false;
       let refreshFailed = false;
       button.disabled = true;
-      button.textContent = 'Waiting for Supabase…';
+      button.textContent = 'Posting transaction…';
       try {
         const created = await Platform.createMember(values, { notify: false });
         accepted = true;
@@ -606,7 +606,7 @@ const App = {
       let accepted = false;
       let refreshFailed = false;
       button.disabled = true;
-      button.textContent = 'Waiting for Supabase…';
+      button.textContent = 'Posting transaction…';
       counterForm.dataset.idempotencyKey ||= crypto.randomUUID();
       try {
         const posted = await Platform.postFinancialTransaction({
@@ -659,7 +659,7 @@ const App = {
       let accepted = false;
       let refreshFailed = false;
       button.disabled = true;
-      button.textContent = 'Waiting for Supabase…';
+      button.textContent = 'Posting transaction…';
       journalForm.dataset.idempotencyKey ||= crypto.randomUUID();
       try {
         const posted = await Platform.postFinancialTransaction({
@@ -703,7 +703,7 @@ const App = {
         const result = form.querySelector('.online-form-result');
         const values = Object.fromEntries(new FormData(form).entries());
         button.disabled = true;
-        button.textContent = 'Waiting for Supabase…';
+        button.textContent = 'Posting transaction…';
         form.dataset.idempotencyKey ||= crypto.randomUUID();
         let accepted = false;
         let refreshError = null;

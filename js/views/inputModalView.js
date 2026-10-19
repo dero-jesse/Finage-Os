@@ -634,6 +634,8 @@ const InputModalView = {
         }
         const submitButton = journalForm.querySelector('[type="submit"]');
         submitButton.disabled = true;
+        const originalLabel = submitButton.textContent;
+        submitButton.textContent = 'Posting transaction…';
         journalForm.dataset.idempotencyKey ||= crypto.randomUUID();
         try {
           const result = await Platform.postFinancialTransaction({
@@ -657,6 +659,7 @@ const InputModalView = {
           errorEl.style.display = 'block';
         } finally {
           submitButton.disabled = false;
+          submitButton.textContent = originalLabel;
         }
       });
     }
@@ -686,6 +689,8 @@ const InputModalView = {
         }
         const submitButton = correctionForm.querySelector('[type="submit"]');
         submitButton.disabled = true;
+        const originalLabel = submitButton.textContent;
+        submitButton.textContent = 'Posting transaction…';
         try {
           const result = await Platform.updateManualGLJournal({
             transactionId: String(formData.get('transactionId') || ''),
@@ -705,6 +710,7 @@ const InputModalView = {
           correctionError.style.display = 'block';
         } finally {
           submitButton.disabled = false;
+          submitButton.textContent = originalLabel;
         }
       });
     }
@@ -733,6 +739,8 @@ const InputModalView = {
           return;
         }
         submitButton.disabled = true;
+        const originalLabel = submitButton.textContent;
+        submitButton.textContent = 'Posting transaction…';
         try {
           const newMember = store.addMember({
             name,
@@ -781,6 +789,7 @@ const InputModalView = {
           App.showToast(`Member registration failed: ${error.message || 'Unknown error.'}`, 'danger');
         } finally {
           submitButton.disabled = false;
+          submitButton.textContent = originalLabel;
         }
       });
     }
@@ -883,6 +892,8 @@ const InputModalView = {
         }
         const submitButton = txForm.querySelector('[type="submit"]');
         submitButton.disabled = true;
+        const originalLabel = submitButton.textContent;
+        submitButton.textContent = 'Posting transaction…';
         txForm.dataset.idempotencyKey ||= crypto.randomUUID();
         try {
           const loanId = category === 'Loan Repayment'
@@ -907,6 +918,7 @@ const InputModalView = {
           App.showToast(error.message || 'Supabase rejected this transaction.', 'danger');
         } finally {
           submitButton.disabled = false;
+          submitButton.textContent = originalLabel;
         }
       });
     }

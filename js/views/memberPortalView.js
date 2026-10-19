@@ -710,7 +710,7 @@ const TellerDeskView = {
           return;
         }
         confirmPost.disabled = true;
-        confirmPost.textContent = 'Waiting for Supabase…';
+        confirmPost.textContent = 'Posting transaction…';
         confirmPost.dataset.idempotencyKey ||= crypto.randomUUID();
         try {
           const result = await Platform.postFinancialTransaction({

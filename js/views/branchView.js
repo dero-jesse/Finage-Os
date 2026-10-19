@@ -672,7 +672,7 @@ const BranchView = {
       }
       finalBtn.disabled = true;
       const originalLabel = finalBtn.textContent;
-      finalBtn.textContent = 'Waiting for Supabase…';
+      finalBtn.textContent = 'Posting transaction…';
 
       let newMember;
       try {
